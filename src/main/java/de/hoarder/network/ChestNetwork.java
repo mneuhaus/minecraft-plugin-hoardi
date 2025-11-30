@@ -14,7 +14,7 @@ public class ChestNetwork {
     private final World world;
     private Location root;
     private final Map<Location, NetworkChest> chests = new LinkedHashMap<>();
-    private final SpiralPositionCalculator positionCalculator;
+    private final RowBasedPositionCalculator positionCalculator;
     private final HoarderConfig config;
 
     // Category assignments (category -> list of chest locations)
@@ -24,7 +24,7 @@ public class ChestNetwork {
         this.world = world;
         this.root = root;
         this.config = config;
-        this.positionCalculator = new SpiralPositionCalculator(config);
+        this.positionCalculator = new RowBasedPositionCalculator(config);
     }
 
     /**
