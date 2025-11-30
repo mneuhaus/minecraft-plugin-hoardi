@@ -12,3 +12,6 @@ target/
 # OS
 .DS_Store
 Thumbs.db
+
+# Testserver runtime data (keep docker-compose.yml)
+test/data/
