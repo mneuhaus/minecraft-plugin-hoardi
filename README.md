@@ -56,11 +56,52 @@ Hoardi is a Paper plugin for Minecraft 1.21+ that transforms your storage into a
 ### Shelf Registration
 When you sneak + place a shelf against a chest, the chest joins your storage network. The shelf will display the top 3 items in the chest, giving you a visual preview of contents.
 
+### Shelf Fill Level Display
+
+Shelves visually indicate how full a chest is using a clever item display system:
+
+| Chest Contents | Display Pattern | Meaning |
+|----------------|-----------------|---------|
+| 1 item type, < 50% full | `[ ] [X] [ ]` | Single item centered |
+| 1 item type, 50-80% full | `[X] [X] [ ]` | Two items shown |
+| 1 item type, > 80% full | `[X] [X] [X]` | Three items = nearly full! |
+| 2 item types | `[A] [B] [ ]` or `[A] [A] [B]` | Top 2 items shown |
+| 3+ item types | `[A] [B] [C]` | Top 3 most common items |
+
+This lets you see at a glance:
+- **What's inside** - the actual item types
+- **How full it is** - more repeated items = fuller chest
+- **When to expand** - three identical items means time for more storage!
+
 ### Sorting Algorithm
 1. **Collect**: All items from all chests are gathered
 2. **Categorize**: Each item is assigned to a category (e.g., `wood/oak`, `ores/iron`, `food/meat`)
 3. **Distribute**: Items are placed into chests, one category per chest when possible
 4. **Overflow Protection**: If space is tight, categories are merged; items are never lost
+
+### Category Splitting System
+
+Hoardi intelligently decides how to distribute categories across your chests:
+
+**Default behavior**: Each leaf category (e.g., `wood/oak`, `wood/birch`) gets its own chest.
+
+**When you have fewer chests than categories**, Hoardi merges related categories:
+1. Large categories (> 50% of a chest) always get their own chest
+2. Small categories are grouped with siblings (same parent category)
+3. If still not enough space, categories are merged by root (e.g., all `wood/*` together)
+
+**Example with 10 chests and 25 categories:**
+```
+wood/oak (large)     → Own chest
+wood/sticks (large)  → Own chest
+wood/birch (small)   → Merged into "wood" chest
+wood/spruce (small)  → Merged into "wood" chest
+ores/iron (medium)   → Own chest
+ores/gold (small)    → Merged into "ores" chest
+...
+```
+
+The `split-threshold` setting (default: 50%) controls when a category is considered "large enough" to deserve its own chest.
 
 ### Position Calculation
 Hoardi uses nearest-neighbor pathfinding to determine chest order:
@@ -70,34 +111,115 @@ Hoardi uses nearest-neighbor pathfinding to determine chest order:
 
 ## Configuration
 
-The `config.yml` file is generated on first run. Key settings:
+The `config.yml` file is generated on first run. Here's a detailed breakdown:
+
+### Sorting Triggers
 
 ```yaml
-# When to sort
-quick-sort-on-close: true          # Sort when closing a chest
-full-reorganize-interval: 0        # Auto-reorganize interval (0 = disabled)
+# Sort items when a player closes a chest in the network
+quick-sort-on-close: true
 
-# Sorting behavior
-split-threshold: 50                # Split category when chest is X% full
-bottom-to-top: true               # Process vertical columns bottom-to-top
+# Automatic full reorganization interval in ticks (20 ticks = 1 second)
+# Set to 0 to disable automatic reorganization
+# Example: 72000 = every hour
+full-reorganize-interval: 0
+```
 
-# Categories
+### Splitting Behavior
+
+```yaml
+# When a category fills more than X% of a chest, it gets its own chest
+# Lower value = more separation (needs more chests)
+# Higher value = more merging (fewer chests needed)
+split-threshold: 50
+```
+
+**Examples:**
+| split-threshold | Effect |
+|-----------------|--------|
+| `25` | Very aggressive splitting - even quarter-full categories get own chest |
+| `50` | Balanced (default) - half-full categories get own chest |
+| `75` | Conservative - only very full categories split |
+| `100` | Never split - always merge by parent category |
+
+### Chest Ordering
+
+```yaml
+# Process vertical chest columns from bottom to top
+# Set to false for top-to-bottom ordering
+bottom-to-top: true
+```
+
+This affects the order items are placed when you have stacked chests:
+- `true`: Ground level chests fill first, then upper levels
+- `false`: Top chests fill first, then lower levels
+
+### Category Definitions
+
+```yaml
 categories:
-  wood/oak: [OAK_LOG, OAK_PLANKS, ...]
-  ores/iron: [IRON_ORE, IRON_INGOT, IRON_BLOCK, ...]
-  # ... 300+ items organized into categories
+  # Format: category/subcategory: [ITEM1, ITEM2, ...]
+
+  wood/oak: [OAK_LOG, OAK_PLANKS, OAK_SLAB, ...]
+  wood/birch: [BIRCH_LOG, BIRCH_PLANKS, ...]
+  wood/sticks: [STICK]
+
+  ores/iron: [IRON_ORE, DEEPSLATE_IRON_ORE, RAW_IRON, IRON_INGOT, IRON_BLOCK]
+  ores/gold: [GOLD_ORE, DEEPSLATE_GOLD_ORE, RAW_GOLD, GOLD_INGOT, GOLD_BLOCK]
+
+  food/meat: [BEEF, COOKED_BEEF, PORKCHOP, COOKED_PORKCHOP, ...]
+
+  # ... 300+ items across 80+ categories
 ```
 
 ### Category Hierarchy
 
-Categories use a hierarchical structure:
-- `wood/oak` - Oak wood items
-- `wood/birch` - Birch wood items
-- `ores/iron` - Iron ore, ingots, blocks
-- `food/meat` - All meat items
-- `mob_drops/bones` - Bones and bone blocks
+Categories use a path-like structure where `/` separates levels:
 
-When there aren't enough chests, related categories are merged (e.g., all `wood/*` into one chest).
+```
+wood/               <- Root category
+├── oak             <- Leaf category (wood/oak)
+├── birch           <- Leaf category (wood/birch)
+├── sticks          <- Leaf category (wood/sticks)
+└── ...
+
+ores/
+├── iron
+├── gold
+├── diamond
+└── ...
+```
+
+**How merging works:**
+- With enough chests: Each leaf category (`wood/oak`, `wood/birch`) gets its own chest
+- Limited chests: Siblings merge (`wood/oak` + `wood/birch` → `wood` chest)
+- Very limited: All wood items share one chest
+
+### Display Names
+
+```yaml
+category-names:
+  wood: "Wood & Logs"
+  ores: "Ores & Minerals"
+  food: "Food & Cooking"
+  # Used in /hoardi stats output
+```
+
+### Adding Custom Categories
+
+You can add your own categories or reorganize existing ones:
+
+```yaml
+categories:
+  # Create a new category for your base materials
+  mybase/building: [STONE, COBBLESTONE, DIRT, GRAVEL]
+  mybase/decoration: [FLOWER_POT, PAINTING, ITEM_FRAME]
+
+  # Override an existing category
+  wood/oak: [OAK_LOG, OAK_PLANKS]  # Simplified version
+```
+
+Items not in any category go to `misc`.
 
 ## Building from Source
 
