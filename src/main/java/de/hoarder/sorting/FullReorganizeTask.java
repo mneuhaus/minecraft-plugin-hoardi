@@ -43,8 +43,8 @@ public class FullReorganizeTask extends BukkitRunnable {
      * Reorganize a single network
      */
     public void reorganizeNetwork(ChestNetwork network) {
-        plugin.getLogger().info("[Hoarder] ========== FULL REORGANIZE ==========");
-        plugin.getLogger().info("[Hoarder] Network has " + network.size() + " chests");
+        plugin.getLogger().info("[Hoardi] ========== FULL REORGANIZE ==========");
+        plugin.getLogger().info("[Hoardi] Network has " + network.size() + " chests");
 
         // Debug: Show network layout
         logNetworkLayout(network);
@@ -53,7 +53,7 @@ public class FullReorganizeTask extends BukkitRunnable {
         Map<String, List<ItemStack>> itemsByCategory = collectAllItems(network);
 
         // Debug: Show all items collected by category
-        plugin.getLogger().info("[Hoarder] Collected items by category:");
+        plugin.getLogger().info("[Hoardi] Collected items by category:");
         for (Map.Entry<String, List<ItemStack>> entry : itemsByCategory.entrySet()) {
             String cat = entry.getKey();
             List<ItemStack> items = entry.getValue();
@@ -67,7 +67,7 @@ public class FullReorganizeTask extends BukkitRunnable {
                     seen.add(item.getType());
                 }
             }
-            plugin.getLogger().info("[Hoarder]   " + cat + " (" + totalAmount + " items): " + itemTypes);
+            plugin.getLogger().info("[Hoardi]   " + cat + " (" + totalAmount + " items): " + itemTypes);
         }
 
         // Step 2: Clear all category assignments
@@ -102,26 +102,58 @@ public class FullReorganizeTask extends BukkitRunnable {
             itemCountByRoot.merge(root, itemCount, Integer::sum);
         }
 
-        // Second pass: decide grouping level based on fill
-        for (Map.Entry<String, List<String>> rootEntry : categoriesByRoot.entrySet()) {
-            String root = rootEntry.getKey();
-            List<String> subCategories = rootEntry.getValue();
-            int totalItems = itemCountByRoot.getOrDefault(root, 0);
-            double fillPercentage = (double) totalItems / chestCapacity;
+        // Second pass: Each leaf category gets its own group by default
+        // We'll merge small categories later if we don't have enough chests
+        Map<String, Integer> itemCountByCategory = new HashMap<>();
+        for (String category : allCategories) {
+            List<ItemStack> items = itemsByCategory.get(category);
+            int itemCount = items != null ? items.stream().mapToInt(ItemStack::getAmount).sum() : 0;
+            itemCountByCategory.put(category, itemCount);
+            // Each category is its own group initially
+            categoriesByGrouping.put(category, new ArrayList<>(List.of(category)));
+        }
 
-            if (fillPercentage > splitThreshold && subCategories.size() > 1) {
-                // Root category is too full - split into sub-categories
-                plugin.getLogger().info("[Hoarder] Root '" + root + "' is " + String.format("%.0f%%", fillPercentage * 100) + " full, splitting into sub-categories");
+        plugin.getLogger().info("[Hoardi] Initial: " + categoriesByGrouping.size() + " separate categories");
 
-                // Group by second-level category (e.g., decoration/glass, decoration/wool)
-                for (String category : subCategories) {
-                    String groupKey = getGroupingKey(category, 2); // Use 2 levels deep
+        // Check if we have enough chests for all categories
+        int availableChests = network.size();
+        int categoriesNeeded = categoriesByGrouping.size();
+
+        if (categoriesNeeded > availableChests) {
+            // Not enough chests - need to merge small categories
+            plugin.getLogger().info("[Hoardi] Only " + availableChests + " chests for " + categoriesNeeded + " categories, merging small ones...");
+
+            // Clear and rebuild with merging
+            categoriesByGrouping.clear();
+
+            // Sort categories by item count (smallest first for merging)
+            List<String> sortedBySize = new ArrayList<>(allCategories);
+            sortedBySize.sort(Comparator.comparingInt(c -> itemCountByCategory.getOrDefault(c, 0)));
+
+            // Try to merge small categories with their siblings (same root)
+            for (String category : sortedBySize) {
+                int catItems = itemCountByCategory.getOrDefault(category, 0);
+                double catFill = (double) catItems / chestCapacity;
+
+                if (catFill > splitThreshold) {
+                    // Large category - gets its own group
+                    categoriesByGrouping.put(category, new ArrayList<>(List.of(category)));
+                } else {
+                    // Small category - group by root (level 1) or second level
+                    String groupKey;
+                    if (categoriesByGrouping.size() < availableChests - 5) {
+                        // Still have room - use more specific grouping
+                        groupKey = getGroupingKey(category, 2);
+                    } else {
+                        // Running low on chests - use root grouping
+                        String root = hierarchy.getRootCategory(category);
+                        groupKey = root != null ? root : "misc";
+                    }
                     categoriesByGrouping.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(category);
                 }
-            } else {
-                // Keep grouped by root
-                categoriesByGrouping.put(root, new ArrayList<>(subCategories));
             }
+
+            plugin.getLogger().info("[Hoardi] After merging: " + categoriesByGrouping.size() + " category groups");
         }
 
         // Sort grouping keys
@@ -132,21 +164,22 @@ public class FullReorganizeTask extends BukkitRunnable {
             return a.compareTo(b);
         });
 
-        plugin.getLogger().info("[Hoarder] Final grouping into " + categoriesByGrouping.size() + " category groups:");
+        plugin.getLogger().info("[Hoardi] Final grouping into " + categoriesByGrouping.size() + " category groups:");
         for (String groupKey : sortedGroupKeys) {
-            plugin.getLogger().info("[Hoarder]   " + groupKey + ": " + categoriesByGrouping.get(groupKey));
+            plugin.getLogger().info("[Hoardi]   " + groupKey + ": " + categoriesByGrouping.get(groupKey));
         }
 
         // Step 4: Distribute items to chests by grouping
         List<NetworkChest> chestsInOrder = network.getChestsInOrder();
         int chestIndex = 0;
+        List<ItemStack> overflowItems = new ArrayList<>(); // Track items that couldn't be placed
 
-        plugin.getLogger().info("[Hoarder] Distributing items to " + chestsInOrder.size() + " chests...");
+        plugin.getLogger().info("[Hoardi] Distributing items to " + chestsInOrder.size() + " chests...");
 
         for (String groupKey : sortedGroupKeys) {
             List<String> subCategories = categoriesByGrouping.get(groupKey);
 
-            plugin.getLogger().info("[Hoarder] Processing group '" + groupKey + "' with sub-categories: " + subCategories);
+            plugin.getLogger().info("[Hoardi] Processing group '" + groupKey + "' with sub-categories: " + subCategories);
 
             int startChestIndex = chestIndex;
 
@@ -161,7 +194,8 @@ public class FullReorganizeTask extends BukkitRunnable {
 
                     while (remaining != null && remaining.getAmount() > 0) {
                         if (chestIndex >= chestsInOrder.size()) {
-                            plugin.getLogger().warning("Ran out of chests during reorganize! " + remaining.getAmount() + "x " + remaining.getType() + " lost!");
+                            // No more chests - save for cramming later
+                            overflowItems.add(remaining.clone());
                             break;
                         }
 
@@ -191,22 +225,52 @@ public class FullReorganizeTask extends BukkitRunnable {
             for (int i = startChestIndex; i <= chestIndex && i < chestsInOrder.size(); i++) {
                 NetworkChest assignedChest = chestsInOrder.get(i);
                 network.assignCategory(assignedChest.getLocation(), groupKey);
-                plugin.getLogger().info("[Hoarder]   Assigned chest #" + i + " at " + formatLocation(assignedChest.getLocation()) + " to category '" + groupKey + "'");
+                plugin.getLogger().info("[Hoardi]   Assigned chest #" + i + " at " + formatLocation(assignedChest.getLocation()) + " to category '" + groupKey + "'");
             }
 
-            // ALWAYS move to next chest for a new category group
-            if (chestIndex < chestsInOrder.size()) {
+            // ALWAYS move to next chest for a new category group (unless we're out of space)
+            if (chestIndex < chestsInOrder.size() && overflowItems.isEmpty()) {
                 NetworkChest currentChest = chestsInOrder.get(chestIndex);
                 double fillPct = currentChest.getFillPercentage();
-                plugin.getLogger().info("[Hoarder]   Chest #" + chestIndex + " is " + String.format("%.1f%%", fillPct * 100) + " full, moving to next for new category");
+                plugin.getLogger().info("[Hoardi]   Chest #" + chestIndex + " is " + String.format("%.1f%%", fillPct * 100) + " full, moving to next for new category");
                 chestIndex++;
+            }
+        }
+
+        // Step 5: Cram overflow items into any chest with space (ignore category separation)
+        if (!overflowItems.isEmpty()) {
+            plugin.getLogger().warning("[Hoardi] Not enough space for clean separation! Cramming " + overflowItems.size() + " item stacks into available space...");
+
+            for (ItemStack item : overflowItems) {
+                ItemStack remaining = item.clone();
+
+                // Try ALL chests from the beginning
+                for (NetworkChest chest : chestsInOrder) {
+                    if (remaining == null || remaining.getAmount() <= 0) break;
+
+                    Inventory inv = chest.getInventory();
+                    if (inv == null) continue;
+
+                    HashMap<Integer, ItemStack> overflow = inv.addItem(remaining);
+                    if (overflow.isEmpty()) {
+                        remaining = null;
+                    } else {
+                        remaining = overflow.values().iterator().next();
+                    }
+                }
+
+                // If STILL can't place, this is a serious problem - drop at root
+                if (remaining != null && remaining.getAmount() > 0) {
+                    plugin.getLogger().severe("[Hoardi] CRITICAL: Could not fit " + remaining.getAmount() + "x " + remaining.getType() + " - dropping at root!");
+                    network.getRoot().getWorld().dropItemNaturally(network.getRoot(), remaining);
+                }
             }
         }
 
         // Save network state
         plugin.getNetworkManager().save();
 
-        plugin.getLogger().info("[Hoarder] Full reorganize complete! " + categoriesByGrouping.size() + " category groups distributed.");
+        plugin.getLogger().info("[Hoardi] Full reorganize complete! " + categoriesByGrouping.size() + " category groups distributed.");
     }
 
     /**
@@ -234,8 +298,8 @@ public class FullReorganizeTask extends BukkitRunnable {
      * Log the network layout showing all chests, their positions, and contents summary
      */
     private void logNetworkLayout(ChestNetwork network) {
-        plugin.getLogger().info("[Hoarder] --- Network Layout ---");
-        plugin.getLogger().info("[Hoarder] Root: " + formatLocation(network.getRoot()));
+        plugin.getLogger().info("[Hoardi] --- Network Layout ---");
+        plugin.getLogger().info("[Hoardi] Root: " + formatLocation(network.getRoot()));
 
         List<NetworkChest> chests = network.getChestsInOrder();
 
@@ -254,10 +318,10 @@ public class FullReorganizeTask extends BukkitRunnable {
             maxZ = Math.max(maxZ, loc.getBlockZ());
         }
 
-        plugin.getLogger().info("[Hoarder] Bounding box: X[" + minX + " to " + maxX + "] Y[" + minY + " to " + maxY + "] Z[" + minZ + " to " + maxZ + "]");
+        plugin.getLogger().info("[Hoardi] Bounding box: X[" + minX + " to " + maxX + "] Y[" + minY + " to " + maxY + "] Z[" + minZ + " to " + maxZ + "]");
 
         // Log each chest with its position number and contents
-        plugin.getLogger().info("[Hoarder] Chests in order (by spiral position):");
+        plugin.getLogger().info("[Hoardi] Chests in order (by spiral position):");
         for (int i = 0; i < chests.size(); i++) {
             NetworkChest chest = chests.get(i);
             org.bukkit.Location loc = chest.getLocation();
@@ -293,20 +357,20 @@ public class FullReorganizeTask extends BukkitRunnable {
             String assignedCat = chest.getAssignedCategory();
             String catInfo = assignedCat != null ? " [" + assignedCat + "]" : "";
 
-            plugin.getLogger().info("[Hoarder]   #" + i + " pos=" + chest.getPosition() +
+            plugin.getLogger().info("[Hoardi]   #" + i + " pos=" + chest.getPosition() +
                 " " + formatLocation(loc) + catInfo +
                 " -> " + contents);
         }
 
         // Also log registered shelves
-        plugin.getLogger().info("[Hoarder] --- Registered Shelves ---");
+        plugin.getLogger().info("[Hoardi] --- Registered Shelves ---");
         var shelfManager = plugin.getShelfManager();
         for (org.bukkit.Location shelfLoc : shelfManager.getTrackedShelves()) {
             org.bukkit.Location chestLoc = shelfManager.getChestLocation(shelfLoc);
-            plugin.getLogger().info("[Hoarder]   Shelf " + formatLocation(shelfLoc) + " -> Chest " + formatLocation(chestLoc));
+            plugin.getLogger().info("[Hoardi]   Shelf " + formatLocation(shelfLoc) + " -> Chest " + formatLocation(chestLoc));
         }
 
-        plugin.getLogger().info("[Hoarder] --- End Layout ---");
+        plugin.getLogger().info("[Hoardi] --- End Layout ---");
     }
 
     /**

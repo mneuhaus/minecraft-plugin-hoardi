@@ -1,18 +1,18 @@
-name: Hoarder
+name: Hoardi
 version: 1.0.0
 main: de.hoarder.HoarderPlugin
 api-version: '1.21'
 description: Intelligent auto-sorting chest network with shelf previews
 author: Marc Neuhaus
 commands:
-  hoarder:
-    description: Manage the Hoarder chest network
-    usage: /hoarder [setroot|sort|info|reload]
+  hoardi:
+    description: Manage the Hoardi chest network
+    usage: /hoardi [setroot|sort|info|reload]
     aliases: [hr]
 permissions:
-  hoarder.admin:
-    description: Allows managing the Hoarder plugin
+  hoardi.admin:
+    description: Allows managing the Hoardi plugin
     default: op
-  hoarder.use:
+  hoardi.use:
     description: Allows creating preview shelves and using the network
     default: true

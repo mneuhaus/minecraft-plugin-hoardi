@@ -424,7 +424,7 @@ public class NetworkManager {
             plugin.getLogger().info("[DEBUG] FullReorganizeTask completed");
         }
 
-        player.sendMessage("§a[Hoarder] §7Items sorted!");
+        player.sendMessage("§a[Hoardi] §7Items sorted!");
     }
 
     /**

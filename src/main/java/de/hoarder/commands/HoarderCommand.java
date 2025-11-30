@@ -18,7 +18,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Command handler for /hoarder
+ * Command handler for /hoardi
  */
 public class HoarderCommand implements CommandExecutor, TabCompleter {
 
@@ -54,7 +54,7 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
      * Show plugin help
      */
     private boolean showHelp(CommandSender sender) {
-        sender.sendMessage("§6=== Hoarder - Intelligent Storage Network ===");
+        sender.sendMessage("§6=== Hoardi - Intelligent Storage Network ===");
         sender.sendMessage("");
         sender.sendMessage("§eHow to use:");
         sender.sendMessage("§71. Place chests in your storage area");
@@ -62,11 +62,11 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§73. Items are automatically sorted when you close a chest!");
         sender.sendMessage("");
         sender.sendMessage("§eCommands:");
-        sender.sendMessage("§f/hoarder info §7- Show network information");
-        sender.sendMessage("§f/hoarder setroot §7- Set network root (look at chest)");
-        sender.sendMessage("§f/hoarder sort §7- Trigger full reorganization");
-        sender.sendMessage("§f/hoarder stats §7- Show detailed statistics");
-        sender.sendMessage("§f/hoarder reload §7- Reload configuration");
+        sender.sendMessage("§f/hoardi info §7- Show network information");
+        sender.sendMessage("§f/hoardi setroot §7- Set network root (look at chest)");
+        sender.sendMessage("§f/hoardi sort §7- Trigger full reorganization");
+        sender.sendMessage("§f/hoardi stats §7- Show detailed statistics");
+        sender.sendMessage("§f/hoardi reload §7- Reload configuration");
         return true;
     }
 
@@ -77,7 +77,7 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
         int totalShelves = plugin.getShelfManager().getTrackedCount();
         int totalChests = plugin.getNetworkManager().getTotalChestCount();
 
-        sender.sendMessage("§6=== Hoarder Network Info ===");
+        sender.sendMessage("§6=== Hoardi Network Info ===");
         sender.sendMessage("§7Tracked shelves: §f" + totalShelves);
         sender.sendMessage("§7Network chests: §f" + totalChests);
 
@@ -117,7 +117,7 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        if (!player.hasPermission("hoarder.admin")) {
+        if (!player.hasPermission("hoardi.admin")) {
             player.sendMessage("§cYou don't have permission to use this command.");
             return true;
         }
@@ -138,7 +138,7 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
         Location rootLoc = target.getLocation();
         plugin.getNetworkManager().setRoot(player.getWorld(), rootLoc);
 
-        player.sendMessage("§a[Hoarder] §7Network root set to " + formatLocation(rootLoc));
+        player.sendMessage("§a[Hoardi] §7Network root set to " + formatLocation(rootLoc));
         player.sendMessage("§7All positions will be calculated relative to this chest.");
 
         return true;
@@ -153,7 +153,7 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        if (!player.hasPermission("hoarder.admin")) {
+        if (!player.hasPermission("hoardi.admin")) {
             player.sendMessage("§cYou don't have permission to use this command.");
             return true;
         }
@@ -175,12 +175,12 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
         }
 
         final ChestNetwork targetNetwork = network;
-        player.sendMessage("§e[Hoarder] §7Starting full reorganization of network at " + formatLocation(network.getRoot()) + "...");
+        player.sendMessage("§e[Hoardi] §7Starting full reorganization of network at " + formatLocation(network.getRoot()) + "...");
 
         // Run on main thread for inventory access
         plugin.getServer().getScheduler().runTask(plugin, () -> {
             FullReorganizeTask.trigger(plugin, targetNetwork);
-            player.sendMessage("§a[Hoarder] §7Reorganization complete!");
+            player.sendMessage("§a[Hoardi] §7Reorganization complete!");
         });
 
         return true;
@@ -190,13 +190,13 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
      * Reload configuration
      */
     private boolean reload(CommandSender sender) {
-        if (!sender.hasPermission("hoarder.admin")) {
+        if (!sender.hasPermission("hoardi.admin")) {
             sender.sendMessage("§cYou don't have permission to use this command.");
             return true;
         }
 
         plugin.reload();
-        sender.sendMessage("§a[Hoarder] §7Configuration reloaded!");
+        sender.sendMessage("§a[Hoardi] §7Configuration reloaded!");
 
         return true;
     }

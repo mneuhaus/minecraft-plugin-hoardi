@@ -1,25 +1,25 @@
-# Hoarder Plugin Makefile
+# Hoardi Plugin Makefile
 
 # Testserver plugin directory
 TESTSERVER_PLUGINS = test/data/plugins
 
-.PHONY: build deploy clean start stop restart logs help
+.PHONY: build deploy clean start stop restart logs help publish publish-changelog
 
 # Default target
 all: build
 
 # Build the plugin using Docker Maven
 build:
-	@echo "Building Hoarder plugin..."
+	@echo "Building Hoardi plugin..."
 	@docker run --rm -v "$(shell pwd)":/app -w /app maven:3.9-eclipse-temurin-21 mvn clean package -q
-	@echo "Build complete: target/Hoarder-1.0.0.jar"
+	@echo "Build complete: target/Hoardi-1.0.0.jar"
 
 # Build and copy to testserver
 deploy: build
 	@echo "Deploying to testserver..."
 	@mkdir -p $(TESTSERVER_PLUGINS)
-	@cp target/Hoarder-1.0.0.jar $(TESTSERVER_PLUGINS)/
-	@echo "Deployed to $(TESTSERVER_PLUGINS)/Hoarder-1.0.0.jar"
+	@cp target/Hoardi-1.0.0.jar $(TESTSERVER_PLUGINS)/
+	@echo "Deployed to $(TESTSERVER_PLUGINS)/Hoardi-1.0.0.jar"
 
 # Start testserver
 start:
@@ -53,9 +53,20 @@ clean:
 	@docker run --rm -v "$(shell pwd)":/app -w /app maven:3.9-eclipse-temurin-21 mvn clean -q
 	@echo "Clean complete"
 
+# Publish to Modrinth
+publish: build
+	@echo "Publishing to Modrinth..."
+	@./scripts/modrinth-publish.sh
+
+# Publish with changelog
+# Usage: make publish-changelog CHANGELOG="Fixed bug X"
+publish-changelog: build
+	@echo "Publishing to Modrinth with changelog..."
+	@./scripts/modrinth-publish.sh "$(shell grep -m1 '<version>' pom.xml | sed 's/.*<version>\(.*\)<\/version>.*/\1/')" "$(CHANGELOG)"
+
 # Show help
 help:
-	@echo "Hoarder Plugin - Available targets:"
+	@echo "Hoardi Plugin - Available targets:"
 	@echo ""
 	@echo "  Build:"
 	@echo "    make build    - Build the plugin JAR"
@@ -67,3 +78,8 @@ help:
 	@echo "    make stop     - Stop the testserver"
 	@echo "    make restart  - Deploy and restart server"
 	@echo "    make logs     - View server logs (Ctrl+C to exit)"
+	@echo ""
+	@echo "  Publishing:"
+	@echo "    make publish           - Build and publish to Modrinth"
+	@echo "    make publish-changelog - Publish with custom changelog"
+	@echo "                             CHANGELOG=\"Your message here\""

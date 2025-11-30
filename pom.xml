@@ -4,12 +4,12 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>de.hoarder</groupId>
-    <artifactId>Hoarder</artifactId>
+    <groupId>de.hoardi</groupId>
+    <artifactId>Hoardi</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
-    <name>Hoarder</name>
+    <name>Hoardi</name>
     <description>Intelligent auto-sorting chest network with shelf previews for Minecraft</description>
 
     <properties>

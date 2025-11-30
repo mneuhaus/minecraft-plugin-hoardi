@@ -11,6 +11,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
+import org.bukkit.block.Shelf;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
@@ -46,7 +47,7 @@ public class ShelfListener implements Listener {
         }
 
         Player player = event.getPlayer();
-        if (!player.hasPermission("hoarder.use")) {
+        if (!player.hasPermission("hoardi.use")) {
             return;
         }
 
@@ -61,10 +62,29 @@ public class ShelfListener implements Listener {
                 // Check if this chest should be added to a network
                 networkManager.onShelfRegistered(chest.getLocation());
 
-                player.sendMessage("§a[Hoarder] §7Shelf registered! It will display the top 3 items from the chest.");
+                player.sendMessage("§a[Hoardi] §7Shelf registered! It will display the top 3 items from the chest.");
                 player.sendMessage("§7Click the shelf to open the chest. Items will be auto-sorted!");
             } else {
-                player.sendMessage("§e[Hoarder] §7Tip: Sneak + place a shelf to add this chest to your storage network!");
+                player.sendMessage("§e[Hoardi] §7Tip: Sneak + place a shelf to add this chest to your storage network!");
+            }
+        }
+    }
+
+    /**
+     * Handle shelf breaking - clear display items BEFORE the block breaks
+     * This prevents the displayed items from dropping
+     */
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onShelfBreakEarly(BlockBreakEvent event) {
+        Block broken = event.getBlock();
+        Location brokenLoc = broken.getLocation();
+
+        // If a tracked shelf is being broken, clear its inventory first
+        if (shelfManager.isShelf(broken) && shelfManager.isTracked(brokenLoc)) {
+            if (broken.getState() instanceof Shelf shelf) {
+                // Clear the shelf inventory so items don't drop
+                shelf.getSnapshotInventory().clear();
+                shelf.update(true, false);
             }
         }
     }
@@ -87,13 +107,19 @@ public class ShelfListener implements Listener {
                 networkManager.onShelfUnregistered(chestLoc);
             }
 
-            event.getPlayer().sendMessage("§e[Hoarder] §7Shelf removed from network.");
+            event.getPlayer().sendMessage("§e[Hoardi] §7Shelf removed from network.");
             return;
         }
 
         // If a chest is broken, unregister all shelves connected to it
         if (shelfManager.isChest(broken)) {
             for (Location shelfLoc : shelfManager.getShelvesForChest(brokenLoc)) {
+                // Clear shelf inventory before unregistering
+                Block shelfBlock = shelfLoc.getBlock();
+                if (shelfBlock.getState() instanceof Shelf shelf) {
+                    shelf.getSnapshotInventory().clear();
+                    shelf.update(true, false);
+                }
                 shelfManager.unregisterShelf(shelfLoc);
             }
             networkManager.onChestRemoved(brokenLoc);

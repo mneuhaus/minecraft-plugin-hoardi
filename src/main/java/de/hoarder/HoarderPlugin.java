@@ -11,7 +11,7 @@ import de.hoarder.sorting.ItemHierarchy;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
- * Hoarder - Intelligent auto-sorting chest network with shelf previews
+ * Hoardi - Intelligent auto-sorting chest network with shelf previews
  */
 public class HoarderPlugin extends JavaPlugin {
 
@@ -48,8 +48,8 @@ public class HoarderPlugin extends JavaPlugin {
 
         // Register commands
         HoarderCommand commandExecutor = new HoarderCommand(this);
-        getCommand("hoarder").setExecutor(commandExecutor);
-        getCommand("hoarder").setTabCompleter(commandExecutor);
+        getCommand("hoardi").setExecutor(commandExecutor);
+        getCommand("hoardi").setTabCompleter(commandExecutor);
 
         // Start shelf display update task (every second)
         displayTask = new ShelfDisplayTask(shelfManager);
@@ -64,7 +64,7 @@ public class HoarderPlugin extends JavaPlugin {
             );
         }
 
-        getLogger().info("Hoarder enabled!");
+        getLogger().info("Hoardi enabled!");
         getLogger().info("Sneak + place a shelf against a chest to add it to the network!");
     }
 
@@ -86,7 +86,7 @@ public class HoarderPlugin extends JavaPlugin {
             networkManager.save();
         }
 
-        getLogger().info("Hoarder disabled!");
+        getLogger().info("Hoardi disabled!");
     }
 
     /**
@@ -96,7 +96,7 @@ public class HoarderPlugin extends JavaPlugin {
         hoarderConfig.load();
         shelfManager.load();
         networkManager.load();
-        getLogger().info("Hoarder reloaded!");
+        getLogger().info("Hoardi reloaded!");
     }
 
     // Getters
