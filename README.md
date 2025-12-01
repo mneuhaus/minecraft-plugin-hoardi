@@ -14,6 +14,7 @@ Hoarder is a Paper plugin for Minecraft 1.21+ that transforms your storage into 
 - **No Item Loss**: Overflow protection ensures items are never lost during sorting
 - **Zero Configuration**: Works out of the box - just place shelves against chests
 - **Config Migration**: Automatically migrates data from older plugin versions
+- **Shulker Unloading**: Right-click a shelf with a shulker box to dump its contents into the network
 
 ## Requirements
 
@@ -116,6 +117,22 @@ ores/gold (small)    → Merged into "ores" chest
 ```
 
 The `split-threshold` setting (default: 50%) controls when a category is considered "large enough" to deserve its own chest.
+
+### Shulker Box Unloading
+
+Quickly unload shulker boxes into your storage network:
+
+1. **Hold a filled shulker box** in your hand
+2. **Right-click any shelf** in your network
+3. Items are distributed to appropriate chests and the shulker is emptied
+
+**Behavior:**
+- Filled shulker → Items distributed to network, shulker emptied
+- Empty shulker → Opens the chest behind the shelf (same as empty hand)
+- Overflow items return to your inventory (or drop if inventory is full)
+- Triggers automatic sorting after unloading
+
+This is perfect for quickly dumping loot from mining trips or adventures!
 
 ### Position Calculation
 Hoardi uses nearest-neighbor pathfinding to determine chest order:
@@ -291,3 +308,10 @@ All Minecraft 1.21+ shelf variants are supported:
 - Bamboo Shelf
 - Crimson Shelf
 - Warped Shelf
+
+## Supported Container Types
+
+Shelves can be attached to:
+- **Chests** (single and double)
+- **Barrels**
+- **Copper Chests** (if available in your Minecraft version)

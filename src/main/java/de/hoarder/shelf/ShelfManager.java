@@ -8,6 +8,7 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.Chest;
+import org.bukkit.block.Container;
 import org.bukkit.block.data.Directional;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.inventory.Inventory;
@@ -178,10 +179,13 @@ public class ShelfManager {
     }
 
     /**
-     * Check if a material is a chest
+     * Check if a material is a chest/barrel/container
      */
     public boolean isChest(Material material) {
-        return material == Material.CHEST || material == Material.TRAPPED_CHEST;
+        return material == Material.CHEST
+            || material == Material.TRAPPED_CHEST
+            || material == Material.BARREL
+            || material == Material.COPPER_CHEST;
     }
 
     /**
@@ -303,12 +307,12 @@ public class ShelfManager {
     }
 
     /**
-     * Get the inventory from a chest block (handles double chests)
+     * Get the inventory from a container block (handles chests, barrels, copper chests)
      */
     public Inventory getChestInventory(Block block) {
         BlockState state = block.getState();
-        if (state instanceof Chest chest) {
-            return chest.getInventory();
+        if (state instanceof Container container) {
+            return container.getInventory();
         }
         return null;
     }

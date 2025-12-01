@@ -282,6 +282,24 @@ public class NetworkManager {
     }
 
     /**
+     * Get network containing a chest location with specific shelf material
+     */
+    public ChestNetwork getNetworkForChest(Location chestLoc, Material shelfMaterial) {
+        if (chestLoc.getWorld() == null) return null;
+        List<ChestNetwork> worldNetworks = networks.get(chestLoc.getWorld().getName());
+        if (worldNetworks == null) return null;
+
+        for (ChestNetwork network : worldNetworks) {
+            if (network.getShelfMaterial() == shelfMaterial && network.containsChest(chestLoc)) {
+                return network;
+            }
+        }
+
+        // Fallback: try finding by material only within radius
+        return findNearbyNetwork(chestLoc, shelfMaterial);
+    }
+
+    /**
      * Find nearby network for a location (within network_radius)
      * @deprecated Use findNearbyNetwork(Location, Material) instead
      */

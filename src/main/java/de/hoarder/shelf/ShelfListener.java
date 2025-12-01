@@ -1,12 +1,16 @@
 package de.hoarder.shelf;
 
 import de.hoarder.HoarderPlugin;
+import de.hoarder.network.ChestNetwork;
 import de.hoarder.network.NetworkManager;
+import de.hoarder.network.NetworkChest;
+import de.hoarder.sorting.FullReorganizeTask;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.Chest;
 import org.bukkit.block.DoubleChest;
+import org.bukkit.block.ShulkerBox;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -20,7 +24,10 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.BlockStateMeta;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -148,7 +155,7 @@ public class ShelfListener implements Listener {
     }
 
     /**
-     * Handle shelf interaction - pass through to chest
+     * Handle shelf interaction - pass through to chest or unload shulker
      */
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerInteract(PlayerInteractEvent event) {
@@ -175,20 +182,162 @@ public class ShelfListener implements Listener {
             return;
         }
 
-        // This is a tracked preview shelf - cancel normal interaction and open chest
+        Player player = event.getPlayer();
+        ItemStack itemInHand = player.getInventory().getItemInMainHand();
+
+        // Check if player is holding a shulker box
+        if (isShulkerBox(itemInHand.getType())) {
+            event.setCancelled(true);
+            unloadShulkerIntoNetwork(player, itemInHand, shelfLoc);
+            return;
+        }
+
+        // Normal interaction - open the chest
         event.setCancelled(true);
 
-        Player player = event.getPlayer();
         Location chestLoc = shelfManager.getChestLocation(shelfLoc);
-
         if (chestLoc == null) {
             return;
         }
 
         Block chestBlock = chestLoc.getBlock();
-        if (chestBlock.getState() instanceof Chest chest) {
-            player.openInventory(chest.getInventory());
+        if (chestBlock.getState() instanceof org.bukkit.block.Container container) {
+            player.openInventory(container.getInventory());
         }
+    }
+
+    /**
+     * Unload a shulker box into the network
+     */
+    private void unloadShulkerIntoNetwork(Player player, ItemStack shulkerItem, Location shelfLoc) {
+        // Get the shulker's contents
+        if (!(shulkerItem.getItemMeta() instanceof BlockStateMeta meta)) {
+            player.sendMessage("§c[Hoardi] §7Could not read shulker contents.");
+            return;
+        }
+
+        if (!(meta.getBlockState() instanceof ShulkerBox shulkerBox)) {
+            player.sendMessage("§c[Hoardi] §7Not a valid shulker box.");
+            return;
+        }
+
+        Inventory shulkerInv = shulkerBox.getInventory();
+        List<ItemStack> itemsToDistribute = new ArrayList<>();
+
+        // Collect all items from shulker
+        for (ItemStack item : shulkerInv.getContents()) {
+            if (item != null && item.getType() != Material.AIR) {
+                itemsToDistribute.add(item.clone());
+            }
+        }
+
+        if (itemsToDistribute.isEmpty()) {
+            // Empty shulker - just open the chest behind the shelf
+            Location chestLoc = shelfManager.getChestLocation(shelfLoc);
+            if (chestLoc != null) {
+                Block chestBlock = chestLoc.getBlock();
+                if (chestBlock.getState() instanceof org.bukkit.block.Container container) {
+                    player.openInventory(container.getInventory());
+                }
+            }
+            return;
+        }
+
+        // Find the network for this shelf
+        Material shelfMaterial = shelfManager.getShelfMaterial(shelfLoc);
+        Location chestLoc = shelfManager.getChestLocation(shelfLoc);
+
+        if (chestLoc == null || shelfMaterial == null) {
+            player.sendMessage("§c[Hoardi] §7Shelf is not properly registered.");
+            return;
+        }
+
+        ChestNetwork network = networkManager.getNetworkForChest(chestLoc, shelfMaterial);
+        if (network == null) {
+            player.sendMessage("§c[Hoardi] §7No network found for this shelf.");
+            return;
+        }
+
+        // Distribute items into the network
+        int totalItems = 0;
+        int itemsPlaced = 0;
+        List<ItemStack> overflow = new ArrayList<>();
+
+        for (ItemStack item : itemsToDistribute) {
+            totalItems += item.getAmount();
+            ItemStack remaining = item.clone();
+
+            // Try to place in network chests
+            for (NetworkChest networkChest : network.getChestsInOrder()) {
+                if (remaining == null || remaining.getAmount() <= 0) break;
+
+                Inventory inv = networkChest.getInventory();
+                if (inv == null) continue;
+
+                var leftover = inv.addItem(remaining);
+                if (leftover.isEmpty()) {
+                    itemsPlaced += remaining.getAmount();
+                    remaining = null;
+                } else {
+                    int placed = remaining.getAmount() - leftover.values().iterator().next().getAmount();
+                    itemsPlaced += placed;
+                    remaining = leftover.values().iterator().next();
+                }
+            }
+
+            // Track overflow
+            if (remaining != null && remaining.getAmount() > 0) {
+                overflow.add(remaining);
+            }
+        }
+
+        // Clear the shulker's contents
+        shulkerInv.clear();
+        meta.setBlockState(shulkerBox);
+        shulkerItem.setItemMeta(meta);
+
+        // Report results
+        if (overflow.isEmpty()) {
+            player.sendMessage("§a[Hoardi] §7Unloaded §f" + totalItems + "§7 items into the network!");
+        } else {
+            int overflowCount = overflow.stream().mapToInt(ItemStack::getAmount).sum();
+            player.sendMessage("§e[Hoardi] §7Unloaded §f" + itemsPlaced + "§7 items. §c" + overflowCount + "§7 items didn't fit!");
+
+            // Give overflow back to player or drop
+            for (ItemStack item : overflow) {
+                var notAdded = player.getInventory().addItem(item);
+                for (ItemStack dropped : notAdded.values()) {
+                    player.getWorld().dropItemNaturally(player.getLocation(), dropped);
+                }
+            }
+        }
+
+        // Trigger a sort to organize the new items
+        player.sendMessage("§7Sorting network...");
+        FullReorganizeTask.trigger(plugin, network);
+    }
+
+    /**
+     * Check if a material is a shulker box
+     */
+    private boolean isShulkerBox(Material material) {
+        return material == Material.SHULKER_BOX
+            || material == Material.WHITE_SHULKER_BOX
+            || material == Material.ORANGE_SHULKER_BOX
+            || material == Material.MAGENTA_SHULKER_BOX
+            || material == Material.LIGHT_BLUE_SHULKER_BOX
+            || material == Material.YELLOW_SHULKER_BOX
+            || material == Material.LIME_SHULKER_BOX
+            || material == Material.PINK_SHULKER_BOX
+            || material == Material.GRAY_SHULKER_BOX
+            || material == Material.LIGHT_GRAY_SHULKER_BOX
+            || material == Material.CYAN_SHULKER_BOX
+            || material == Material.PURPLE_SHULKER_BOX
+            || material == Material.BLUE_SHULKER_BOX
+            || material == Material.BROWN_SHULKER_BOX
+            || material == Material.GREEN_SHULKER_BOX
+            || material == Material.RED_SHULKER_BOX
+            || material == Material.BLACK_SHULKER_BOX;
     }
 
     /**

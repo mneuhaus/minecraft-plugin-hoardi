@@ -6,17 +6,36 @@ import de.hoarder.network.ChestNetwork;
 import de.hoarder.network.NetworkChest;
 import de.hoarder.sorting.FullReorganizeTask;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.Directional;
+import org.bukkit.block.data.type.Chest;
+import org.bukkit.block.data.type.Stairs;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+
+import org.bukkit.block.Container;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Random;
+import java.util.Set;
 
 /**
  * Command handler for /hoardi
@@ -49,6 +68,8 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
             case "reload" -> reload(sender);
             case "stats" -> showStats(sender);
             case "test" -> buildTestWarehouse(sender);
+            case "export" -> exportNetwork(sender);
+            case "fill" -> fillNetworkRandom(sender);
             default -> showHelp(sender);
         };
     }
@@ -322,4 +343,242 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
         }
         return String.valueOf(number);
     }
+
+    /**
+     * Export network structure to console log (for creating test templates)
+     */
+    private boolean exportNetwork(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§cThis command can only be used by players.");
+            return true;
+        }
+
+        if (!player.hasPermission("hoarder.admin")) {
+            player.sendMessage("§cYou don't have permission to use this command.");
+            return true;
+        }
+
+        // Find network near player
+        ChestNetwork network = plugin.getNetworkManager().findNearbyNetwork(player.getLocation());
+
+        if (network == null || network.isEmpty()) {
+            List<ChestNetwork> worldNetworks = plugin.getNetworkManager().getNetworks(player.getWorld());
+            if (!worldNetworks.isEmpty()) {
+                network = worldNetworks.get(0);
+            }
+        }
+
+        if (network == null || network.isEmpty()) {
+            player.sendMessage("§cNo network found in this world.");
+            return true;
+        }
+
+        // Materials to ignore
+        Set<Material> ignoredMaterials = Set.of(
+            Material.AIR, Material.CAVE_AIR, Material.VOID_AIR,
+            Material.DIRT, Material.GRASS_BLOCK, Material.STONE,
+            Material.DEEPSLATE, Material.BEDROCK, Material.WATER, Material.LAVA
+        );
+
+        // Calculate bounding box with 12 block margin
+        int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
+        int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
+        int minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
+
+        for (Location loc : network.getChestLocations()) {
+            minX = Math.min(minX, loc.getBlockX());
+            maxX = Math.max(maxX, loc.getBlockX());
+            minY = Math.min(minY, loc.getBlockY());
+            maxY = Math.max(maxY, loc.getBlockY());
+            minZ = Math.min(minZ, loc.getBlockZ());
+            maxZ = Math.max(maxZ, loc.getBlockZ());
+        }
+
+        // Add margin
+        int margin = 12;
+        minX -= margin; maxX += margin;
+        minY -= margin; maxY += margin;
+        minZ -= margin; maxZ += margin;
+
+        World world = player.getWorld();
+        Location playerLoc = player.getLocation();
+        int playerX = playerLoc.getBlockX();
+        int playerY = playerLoc.getBlockY();
+        int playerZ = playerLoc.getBlockZ();
+
+        // Build JSON structure
+        List<ExportedBlock> blocks = new ArrayList<>();
+
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    Block block = world.getBlockAt(x, y, z);
+                    Material material = block.getType();
+
+                    if (ignoredMaterials.contains(material)) {
+                        continue;
+                    }
+
+                    int relX = x - playerX;
+                    int relY = y - playerY;
+                    int relZ = z - playerZ;
+
+                    BlockData data = block.getBlockData();
+                    String facing = null;
+                    String stairHalf = null;
+                    String chestType = null;
+
+                    if (data instanceof Directional directional) {
+                        facing = directional.getFacing().name();
+                    }
+
+                    if (data instanceof Stairs stairs) {
+                        stairHalf = stairs.getHalf().name();
+                    }
+
+                    if (data instanceof Chest chest) {
+                        chestType = chest.getType().name();
+                    }
+
+                    blocks.add(new ExportedBlock(relX, relY, relZ, material.name(), facing, stairHalf, chestType));
+                }
+            }
+        }
+
+        // Write to JSON file
+        File exportFile = new File(plugin.getDataFolder(), "export.json");
+        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+
+        try (FileWriter writer = new FileWriter(exportFile)) {
+            gson.toJson(blocks, writer);
+            player.sendMessage("§a[Hoardi] §7Network exported to §fplugins/Hoardi/export.json");
+            player.sendMessage("§7Exported §f" + blocks.size() + "§7 blocks (relative to your position)");
+        } catch (IOException e) {
+            player.sendMessage("§c[Hoardi] Failed to write export file: " + e.getMessage());
+            plugin.getLogger().severe("Failed to export network: " + e.getMessage());
+        }
+
+        return true;
+    }
+
+    /**
+     * Fill network with random items (~50% of total capacity)
+     */
+    private boolean fillNetworkRandom(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§cThis command can only be used by players.");
+            return true;
+        }
+
+        if (!player.hasPermission("hoarder.admin")) {
+            player.sendMessage("§cYou don't have permission to use this command.");
+            return true;
+        }
+
+        // Find network near player
+        ChestNetwork network = plugin.getNetworkManager().findNearbyNetwork(player.getLocation());
+
+        if (network == null || network.isEmpty()) {
+            List<ChestNetwork> worldNetworks = plugin.getNetworkManager().getNetworks(player.getWorld());
+            if (!worldNetworks.isEmpty()) {
+                network = worldNetworks.get(0);
+            }
+        }
+
+        if (network == null || network.isEmpty()) {
+            player.sendMessage("§cNo network found in this world.");
+            return true;
+        }
+
+        // Calculate total capacity (27 slots per chest, 64 items per slot)
+        int chestCount = network.size();
+        int totalSlots = chestCount * 27;
+        int targetItems = (int) (totalSlots * 64 * 0.5); // 50% of max capacity
+
+        // Pick 3x as many item types as chests
+        int typeCount = chestCount * 3;
+        List<Material> itemTypes = getRandomItemTypes(typeCount);
+
+        // Distribute items randomly across types
+        Random random = new Random();
+        List<ItemStack> itemsToDistribute = new ArrayList<>();
+        int remainingItems = targetItems;
+
+        for (int i = 0; i < itemTypes.size() && remainingItems > 0; i++) {
+            Material mat = itemTypes.get(i);
+            int maxStack = mat.getMaxStackSize();
+
+            // Random amount for this type (between 1 stack and a fair share of remaining)
+            int maxForType = Math.min(remainingItems, maxStack * 10);
+            int amount = random.nextInt(maxForType) + maxStack;
+            amount = Math.min(amount, remainingItems);
+
+            // Create stacks
+            while (amount > 0) {
+                int stackSize = Math.min(amount, maxStack);
+                itemsToDistribute.add(new ItemStack(mat, stackSize));
+                amount -= stackSize;
+                remainingItems -= stackSize;
+            }
+        }
+
+        // Shuffle items
+        Collections.shuffle(itemsToDistribute, random);
+
+        // Distribute to chests
+        List<Location> chestLocations = new ArrayList<>(network.getChestLocations());
+        int itemIndex = 0;
+        int totalAdded = 0;
+
+        for (Location loc : chestLocations) {
+            Block block = loc.getBlock();
+            if (block.getState() instanceof Container container) {
+                Inventory inv = container.getInventory();
+
+                // Add random number of items to this chest
+                int slotsToFill = random.nextInt(inv.getSize());
+                for (int i = 0; i < slotsToFill && itemIndex < itemsToDistribute.size(); i++) {
+                    ItemStack item = itemsToDistribute.get(itemIndex++);
+                    inv.addItem(item);
+                    totalAdded += item.getAmount();
+                }
+            }
+        }
+
+        player.sendMessage("§a[Hoardi] §7Filled network with §f" + formatNumber(totalAdded) + "§7 items");
+        player.sendMessage("§7(" + itemTypes.size() + " different item types across " + chestCount + " chests)");
+
+        return true;
+    }
+
+    /**
+     * Get random item types for filling chests
+     */
+    private List<Material> getRandomItemTypes(int count) {
+        List<Material> candidates = new ArrayList<>();
+
+        // Add various stackable item types
+        for (Material mat : Material.values()) {
+            if (mat.isItem() && !mat.isAir() && mat.getMaxStackSize() > 1) {
+                // Skip unstackables, spawn eggs, potions, etc.
+                String name = mat.name();
+                if (name.contains("SPAWN_EGG") || name.contains("POTION") ||
+                    name.contains("BANNER_PATTERN") || name.contains("MUSIC_DISC") ||
+                    name.contains("COMMAND") || name.contains("STRUCTURE") ||
+                    name.contains("BARRIER") || name.contains("LIGHT") ||
+                    name.contains("DEBUG") || name.contains("JIGSAW")) {
+                    continue;
+                }
+                candidates.add(mat);
+            }
+        }
+
+        Collections.shuffle(candidates, new Random());
+        return candidates.subList(0, Math.min(count, candidates.size()));
+    }
+
+    /**
+     * Simple record for JSON export
+     */
+    private record ExportedBlock(int x, int y, int z, String material, String facing, String stairHalf, String chestType) {}
 }

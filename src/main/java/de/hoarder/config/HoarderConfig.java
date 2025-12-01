@@ -34,8 +34,11 @@ public class HoarderConfig {
     // Item hierarchy: material -> category path
     private final Map<Material, String> materialToCategory = new HashMap<>();
 
-    // All category paths sorted alphabetically
+    // All category paths sorted by config order
     private final List<String> sortedCategories = new ArrayList<>();
+
+    // Category order from config (root categories only)
+    private final List<String> categoryOrder = new ArrayList<>();
 
     // Display names for categories
     private final Map<String, String> displayNames = new HashMap<>();
@@ -80,6 +83,9 @@ public class HoarderConfig {
             itemsPerTick = performance.getInt("items_per_tick", 64);
         }
 
+        // Load category order
+        loadCategoryOrder(config);
+
         // Load item hierarchy
         loadItemHierarchy(config);
 
@@ -89,6 +95,20 @@ public class HoarderConfig {
         if (debug) {
             plugin.getLogger().info("Loaded " + materialToCategory.size() + " material mappings");
             plugin.getLogger().info("Loaded " + sortedCategories.size() + " categories");
+        }
+    }
+
+    /**
+     * Load category order from config
+     */
+    private void loadCategoryOrder(FileConfiguration config) {
+        categoryOrder.clear();
+        List<String> order = config.getStringList("category_order");
+        if (order != null && !order.isEmpty()) {
+            categoryOrder.addAll(order);
+        }
+        if (debug) {
+            plugin.getLogger().info("Loaded category order: " + categoryOrder);
         }
     }
 
@@ -132,13 +152,36 @@ public class HoarderConfig {
             }
         }
 
-        // Sort categories alphabetically, but keep "misc" at the end
+        // Sort categories by config order, subcategories alphabetically within their parent
         sortedCategories.addAll(categories);
         sortedCategories.sort((a, b) -> {
-            if (a.equals("misc") || a.startsWith("misc/")) return 1;
-            if (b.equals("misc") || b.startsWith("misc/")) return -1;
+            String rootA = getRootFromPath(a);
+            String rootB = getRootFromPath(b);
+
+            // Get order index for root categories
+            int indexA = categoryOrder.indexOf(rootA);
+            int indexB = categoryOrder.indexOf(rootB);
+
+            // Categories not in order go to end (before misc)
+            if (indexA < 0) indexA = Integer.MAX_VALUE - 1;
+            if (indexB < 0) indexB = Integer.MAX_VALUE - 1;
+
+            // Compare by root order first
+            if (indexA != indexB) {
+                return Integer.compare(indexA, indexB);
+            }
+
+            // Same root category - sort alphabetically
             return a.compareTo(b);
         });
+    }
+
+    /**
+     * Get the root category from a path (e.g., "wood/oak" -> "wood")
+     */
+    private String getRootFromPath(String path) {
+        int slash = path.indexOf('/');
+        return slash > 0 ? path.substring(0, slash) : path;
     }
 
     /**
@@ -224,6 +267,37 @@ public class HoarderConfig {
     public int getCategoryDepth(String path) {
         if (path == null || path.isEmpty()) return 0;
         return (int) path.chars().filter(c -> c == '/').count() + 1;
+    }
+
+    /**
+     * Get the category order list
+     */
+    public List<String> getCategoryOrder() {
+        return Collections.unmodifiableList(categoryOrder);
+    }
+
+    /**
+     * Compare two categories by config order
+     * @return negative if a comes before b, positive if b comes before a, 0 if equal
+     */
+    public int compareCategoriesByOrder(String a, String b) {
+        String rootA = getRootFromPath(a);
+        String rootB = getRootFromPath(b);
+
+        int indexA = categoryOrder.indexOf(rootA);
+        int indexB = categoryOrder.indexOf(rootB);
+
+        // Categories not in order go to end (before misc)
+        if (indexA < 0) indexA = Integer.MAX_VALUE - 1;
+        if (indexB < 0) indexB = Integer.MAX_VALUE - 1;
+
+        // Compare by root order first
+        if (indexA != indexB) {
+            return Integer.compare(indexA, indexB);
+        }
+
+        // Same root category - sort alphabetically
+        return a.compareTo(b);
     }
 
     // Getters

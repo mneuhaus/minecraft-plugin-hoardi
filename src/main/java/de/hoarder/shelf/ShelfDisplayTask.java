@@ -4,7 +4,9 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
+import org.bukkit.block.data.Directional;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -26,8 +28,14 @@ public class ShelfDisplayTask extends BukkitRunnable {
     public void run() {
         Set<Location> toRemove = new HashSet<>();
         Set<Location> tracked = shelfManager.getTrackedShelves();
+        Set<Location> processedPairs = new HashSet<>();
 
         for (Location shelfLoc : tracked) {
+            // Skip if already processed as part of a pair
+            if (processedPairs.contains(shelfLoc)) {
+                continue;
+            }
+
             Location chestLoc = shelfManager.getChestLocation(shelfLoc);
 
             if (chestLoc == null) {
@@ -66,11 +74,41 @@ public class ShelfDisplayTask extends BukkitRunnable {
                 continue;
             }
 
-            // Calculate what to display
-            DisplayInfo displayInfo = calculateDisplay(chestInv);
+            // Check for paired shelf (side-by-side on same chest/double chest)
+            Block pairedShelf = findPairedShelf(shelfBlock, chestBlock, tracked);
 
-            // Update shelf contents
-            updateShelf(shelfBlock, displayInfo);
+            if (pairedShelf != null) {
+                // Mark both as processed
+                processedPairs.add(shelfLoc);
+                processedPairs.add(pairedShelf.getLocation());
+
+                // Determine which shelf is "left" and which is "right" based on position
+                Block leftShelf, rightShelf;
+                if (isLeftOf(shelfBlock, pairedShelf)) {
+                    leftShelf = shelfBlock;
+                    rightShelf = pairedShelf;
+                } else {
+                    leftShelf = pairedShelf;
+                    rightShelf = shelfBlock;
+                }
+
+                // Calculate 6-slot display for paired shelves
+                DisplayInfo displayInfo = calculateDisplayPaired(chestInv);
+
+                // Update left shelf (slots 0-2)
+                updateShelf(leftShelf, new DisplayInfo(new ItemStack[]{
+                    displayInfo.slots[0], displayInfo.slots[1], displayInfo.slots[2]
+                }));
+
+                // Update right shelf (slots 3-5)
+                updateShelf(rightShelf, new DisplayInfo(new ItemStack[]{
+                    displayInfo.slots[3], displayInfo.slots[4], displayInfo.slots[5]
+                }));
+            } else {
+                // Single shelf - use standard 3-slot display
+                DisplayInfo displayInfo = calculateDisplay(chestInv);
+                updateShelf(shelfBlock, displayInfo);
+            }
         }
 
         // Clean up invalid shelves
@@ -80,7 +118,186 @@ public class ShelfDisplayTask extends BukkitRunnable {
     }
 
     /**
-     * Calculate what to display based on chest contents
+     * Find a paired shelf that is side-by-side with this shelf on the same chest
+     */
+    private Block findPairedShelf(Block shelfBlock, Block chestBlock, Set<Location> trackedShelves) {
+        // Get the facing direction of the shelf
+        if (!(shelfBlock.getBlockData() instanceof Directional directional)) {
+            return null;
+        }
+
+        BlockFace facing = directional.getFacing();
+
+        // Determine the horizontal directions perpendicular to facing
+        BlockFace[] sideFaces;
+        if (facing == BlockFace.NORTH || facing == BlockFace.SOUTH) {
+            sideFaces = new BlockFace[]{BlockFace.EAST, BlockFace.WEST};
+        } else {
+            sideFaces = new BlockFace[]{BlockFace.NORTH, BlockFace.SOUTH};
+        }
+
+        // Check adjacent blocks for another shelf pointing same direction at same chest
+        for (BlockFace side : sideFaces) {
+            Block adjacent = shelfBlock.getRelative(side);
+            Location adjacentLoc = adjacent.getLocation();
+
+            if (!trackedShelves.contains(adjacentLoc)) {
+                continue;
+            }
+
+            if (!shelfManager.isShelf(adjacent)) {
+                continue;
+            }
+
+            // Check if adjacent shelf points to same chest (or the other half of a double chest)
+            Location adjacentChestLoc = shelfManager.getChestLocation(adjacentLoc);
+            if (adjacentChestLoc == null) {
+                continue;
+            }
+
+            // Check if it's the same chest or part of same double chest
+            if (isSameOrDoubleChest(chestBlock.getLocation(), adjacentChestLoc)) {
+                // Verify same facing direction
+                if (adjacent.getBlockData() instanceof Directional adjDir) {
+                    if (adjDir.getFacing() == facing) {
+                        return adjacent;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Check if two chest locations are the same chest or part of a CONNECTED double chest
+     * (not just adjacent chests, but actually sharing the same inventory)
+     */
+    private boolean isSameOrDoubleChest(Location loc1, Location loc2) {
+        if (loc1.equals(loc2)) {
+            return true;
+        }
+
+        // Check if they're adjacent horizontally
+        int dx = Math.abs(loc1.getBlockX() - loc2.getBlockX());
+        int dy = Math.abs(loc1.getBlockY() - loc2.getBlockY());
+        int dz = Math.abs(loc1.getBlockZ() - loc2.getBlockZ());
+
+        if (dy != 0 || !((dx == 1 && dz == 0) || (dx == 0 && dz == 1))) {
+            return false; // Not adjacent horizontally
+        }
+
+        // Check if they actually form a double chest (same inventory)
+        Block block1 = loc1.getBlock();
+        Block block2 = loc2.getBlock();
+
+        // Both must be chests (not barrels, etc.)
+        if (!(block1.getBlockData() instanceof org.bukkit.block.data.type.Chest chest1Data) ||
+            !(block2.getBlockData() instanceof org.bukkit.block.data.type.Chest chest2Data)) {
+            return false;
+        }
+
+        // Single chests can't be paired
+        if (chest1Data.getType() == org.bukkit.block.data.type.Chest.Type.SINGLE ||
+            chest2Data.getType() == org.bukkit.block.data.type.Chest.Type.SINGLE) {
+            return false;
+        }
+
+        // They must face the same direction to be a double chest
+        if (chest1Data.getFacing() != chest2Data.getFacing()) {
+            return false;
+        }
+
+        // One must be LEFT and one must be RIGHT
+        boolean isDoubleChest = (chest1Data.getType() == org.bukkit.block.data.type.Chest.Type.LEFT &&
+                                  chest2Data.getType() == org.bukkit.block.data.type.Chest.Type.RIGHT) ||
+                                 (chest1Data.getType() == org.bukkit.block.data.type.Chest.Type.RIGHT &&
+                                  chest2Data.getType() == org.bukkit.block.data.type.Chest.Type.LEFT);
+
+        return isDoubleChest;
+    }
+
+    /**
+     * Determine if block A is to the "left" of block B based on coordinates
+     */
+    private boolean isLeftOf(Block a, Block b) {
+        // Use a consistent ordering: lower X first, then lower Z
+        if (a.getX() != b.getX()) {
+            return a.getX() < b.getX();
+        }
+        return a.getZ() < b.getZ();
+    }
+
+    /**
+     * Calculate 6-slot display for paired shelves
+     */
+    private DisplayInfo calculateDisplayPaired(Inventory inventory) {
+        Map<Material, Integer> itemCounts = new HashMap<>();
+        Map<Material, ItemStack> itemSamples = new HashMap<>();
+        int totalItems = 0;
+
+        for (ItemStack item : inventory.getContents()) {
+            if (item != null && item.getType() != Material.AIR) {
+                Material type = item.getType();
+                int amount = item.getAmount();
+                itemCounts.merge(type, amount, Integer::sum);
+                totalItems += amount;
+                if (!itemSamples.containsKey(type)) {
+                    itemSamples.put(type, item.clone());
+                }
+            }
+        }
+
+        ItemStack[] slots = new ItemStack[6];
+
+        if (itemCounts.isEmpty() || totalItems == 0) {
+            return new DisplayInfo(slots);
+        }
+
+        // Sort items by count (descending)
+        List<Map.Entry<Material, Integer>> sortedItems = itemCounts.entrySet().stream()
+            .sorted(Map.Entry.<Material, Integer>comparingByValue().reversed())
+            .toList();
+
+        int uniqueTypes = sortedItems.size();
+        int maxItems = inventory.getSize() * 64;
+
+        if (uniqueTypes == 1) {
+            // Only 1 item type - show fill level across 6 slots
+            Material mat = sortedItems.get(0).getKey();
+            int count = sortedItems.get(0).getValue();
+            double fillPercentage = (double) count / maxItems;
+
+            ItemStack sample = itemSamples.get(mat).clone();
+            sample.setAmount(1);
+
+            // Fill slots based on percentage (each slot = ~16.7%)
+            int slotsToFill = Math.max(1, (int) Math.ceil(fillPercentage * 6));
+            // Center the items
+            int startSlot = (6 - slotsToFill) / 2;
+            for (int i = 0; i < slotsToFill; i++) {
+                slots[startSlot + i] = sample.clone();
+            }
+        } else {
+            // Multiple item types - show top items (up to 6)
+            int itemsToShow = Math.min(uniqueTypes, 6);
+
+            // Center items if less than 6
+            int startSlot = (6 - itemsToShow) / 2;
+
+            for (int i = 0; i < itemsToShow; i++) {
+                Material material = sortedItems.get(i).getKey();
+                ItemStack sample = itemSamples.get(material).clone();
+                sample.setAmount(1);
+                slots[startSlot + i] = sample;
+            }
+        }
+
+        return new DisplayInfo(slots);
+    }
+
+    /**
+     * Calculate what to display based on chest contents (3 slots)
      */
     private DisplayInfo calculateDisplay(Inventory inventory) {
         Map<Material, Integer> itemCounts = new HashMap<>();

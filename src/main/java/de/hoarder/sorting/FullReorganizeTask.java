@@ -10,18 +10,29 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.*;
-import java.util.Map.Entry;
 
 /**
  * Full network reorganization task
- * Redistributes all items optimally across all chests
- * Runs periodically or on manual trigger
+ * Redistributes all items optimally across all chests using hierarchical splitting
+ *
+ * Algorithm:
+ * 1. Collect all items grouped by leaf category
+ * 2. Start with root categories (wood, stone, etc.)
+ * 3. For each category:
+ *    - Calculate needed chests
+ *    - If <= 1 chest: keep together
+ *    - If > 1 chest: split into subcategories and repeat
+ * 4. If not enough chests: merge back up the hierarchy
+ * 5. Overflow cramming as last resort
  */
 public class FullReorganizeTask extends BukkitRunnable {
 
     private final HoarderPlugin plugin;
     private final HoarderConfig config;
     private final ItemHierarchy hierarchy;
+
+    // Chest capacity: 27 slots * 64 items (approximation for mixed stacks)
+    private static final int CHEST_CAPACITY = 27 * 64;
 
     public FullReorganizeTask(HoarderPlugin plugin) {
         this.plugin = plugin;
@@ -31,10 +42,8 @@ public class FullReorganizeTask extends BukkitRunnable {
 
     @Override
     public void run() {
-        // Reorganize all networks
         for (ChestNetwork network : plugin.getNetworkManager().getAllNetworks()) {
             if (network.isEmpty()) continue;
-
             reorganizeNetwork(network);
         }
     }
@@ -46,335 +55,304 @@ public class FullReorganizeTask extends BukkitRunnable {
         plugin.getLogger().info("[Hoardi] ========== FULL REORGANIZE ==========");
         plugin.getLogger().info("[Hoardi] Network has " + network.size() + " chests");
 
-        // Debug: Show network layout
-        logNetworkLayout(network);
+        // Step 1: Collect ALL items from all chests, grouped by leaf category
+        Map<String, List<ItemStack>> itemsByLeafCategory = collectAllItems(network);
 
-        // Step 1: Collect ALL items from all chests
-        Map<String, List<ItemStack>> itemsByCategory = collectAllItems(network);
-
-        // Debug: Show all items collected by category
-        plugin.getLogger().info("[Hoardi] Collected items by category:");
-        for (Map.Entry<String, List<ItemStack>> entry : itemsByCategory.entrySet()) {
-            String cat = entry.getKey();
-            List<ItemStack> items = entry.getValue();
-            int totalAmount = items.stream().mapToInt(ItemStack::getAmount).sum();
-            StringBuilder itemTypes = new StringBuilder();
-            Set<Material> seen = new HashSet<>();
-            for (ItemStack item : items) {
-                if (!seen.contains(item.getType())) {
-                    if (itemTypes.length() > 0) itemTypes.append(", ");
-                    itemTypes.append(item.getType().name());
-                    seen.add(item.getType());
-                }
-            }
-            plugin.getLogger().info("[Hoardi]   " + cat + " (" + totalAmount + " items): " + itemTypes);
+        if (itemsByLeafCategory.isEmpty()) {
+            plugin.getLogger().info("[Hoardi] No items to sort.");
+            return;
         }
+
+        // Debug: Show collected items
+        logCollectedItems(itemsByLeafCategory);
 
         // Step 2: Clear all category assignments
         network.clearCategoryAssignments();
 
-        // Step 3: Determine grouping depth based on fill percentage
-        // Calculate how many chests each root category would need
-        int chestCapacity = 27 * 64; // Single chest slots * max stack (approximation)
-        double splitThreshold = config.getSplitThreshold() / 100.0;
-
-        Map<String, List<String>> categoriesByGrouping = new LinkedHashMap<>();
-        List<String> allCategories = new ArrayList<>(itemsByCategory.keySet());
-
-        // Sort all categories alphabetically first
-        allCategories.sort((a, b) -> {
-            if (a.equals("misc") || a.startsWith("misc/")) return 1;
-            if (b.equals("misc") || b.startsWith("misc/")) return -1;
-            return a.compareTo(b);
-        });
-
-        // First pass: group by root and calculate totals
-        Map<String, Integer> itemCountByRoot = new HashMap<>();
-        Map<String, List<String>> categoriesByRoot = new LinkedHashMap<>();
-
-        for (String category : allCategories) {
-            String root = hierarchy.getRootCategory(category);
-            if (root == null) root = "misc";
-            categoriesByRoot.computeIfAbsent(root, k -> new ArrayList<>()).add(category);
-
-            List<ItemStack> items = itemsByCategory.get(category);
-            int itemCount = items != null ? items.stream().mapToInt(ItemStack::getAmount).sum() : 0;
-            itemCountByRoot.merge(root, itemCount, Integer::sum);
-        }
-
-        // Second pass: Each leaf category gets its own group by default
-        // We'll merge small categories later if we don't have enough chests
-        Map<String, Integer> itemCountByCategory = new HashMap<>();
-        for (String category : allCategories) {
-            List<ItemStack> items = itemsByCategory.get(category);
-            int itemCount = items != null ? items.stream().mapToInt(ItemStack::getAmount).sum() : 0;
-            itemCountByCategory.put(category, itemCount);
-            // Each category is its own group initially
-            categoriesByGrouping.put(category, new ArrayList<>(List.of(category)));
-        }
-
-        plugin.getLogger().info("[Hoardi] Initial: " + categoriesByGrouping.size() + " separate categories");
-
-        // Check if we have enough chests for all categories
+        // Step 3: Build distribution plan using hierarchical splitting
         int availableChests = network.size();
-        int categoriesNeeded = categoriesByGrouping.size();
+        List<CategoryGroup> distributionPlan = buildDistributionPlan(itemsByLeafCategory, availableChests);
 
-        if (categoriesNeeded > availableChests) {
-            // Not enough chests - need to merge small categories
-            plugin.getLogger().info("[Hoardi] Only " + availableChests + " chests for " + categoriesNeeded + " categories, merging small ones...");
-
-            // Clear and rebuild with merging
-            categoriesByGrouping.clear();
-
-            // Sort categories by item count (smallest first for merging)
-            List<String> sortedBySize = new ArrayList<>(allCategories);
-            sortedBySize.sort(Comparator.comparingInt(c -> itemCountByCategory.getOrDefault(c, 0)));
-
-            // Try to merge small categories with their siblings (same root)
-            for (String category : sortedBySize) {
-                int catItems = itemCountByCategory.getOrDefault(category, 0);
-                double catFill = (double) catItems / chestCapacity;
-
-                if (catFill > splitThreshold) {
-                    // Large category - gets its own group
-                    categoriesByGrouping.put(category, new ArrayList<>(List.of(category)));
-                } else {
-                    // Small category - group by root (level 1) or second level
-                    String groupKey;
-                    if (categoriesByGrouping.size() < availableChests - 5) {
-                        // Still have room - use more specific grouping
-                        groupKey = getGroupingKey(category, 2);
-                    } else {
-                        // Running low on chests - use root grouping
-                        String root = hierarchy.getRootCategory(category);
-                        groupKey = root != null ? root : "misc";
-                    }
-                    categoriesByGrouping.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(category);
-                }
-            }
-
-            plugin.getLogger().info("[Hoardi] After merging: " + categoriesByGrouping.size() + " category groups");
+        // Debug: Show distribution plan
+        plugin.getLogger().info("[Hoardi] Distribution plan (" + distributionPlan.size() + " groups for " + availableChests + " chests):");
+        for (CategoryGroup group : distributionPlan) {
+            plugin.getLogger().info("[Hoardi]   " + group.displayName + ": " + group.itemCount + " items (~" +
+                String.format("%.1f", group.chestsNeeded) + " chests)");
         }
 
-        // Sort grouping keys
-        List<String> sortedGroupKeys = new ArrayList<>(categoriesByGrouping.keySet());
-        sortedGroupKeys.sort((a, b) -> {
-            if (a.equals("misc") || a.startsWith("misc/")) return 1;
-            if (b.equals("misc") || b.startsWith("misc/")) return -1;
-            return a.compareTo(b);
-        });
-
-        plugin.getLogger().info("[Hoardi] Final grouping into " + categoriesByGrouping.size() + " category groups:");
-        for (String groupKey : sortedGroupKeys) {
-            plugin.getLogger().info("[Hoardi]   " + groupKey + ": " + categoriesByGrouping.get(groupKey));
-        }
-
-        // Step 4: Distribute items to chests by grouping
+        // Step 4: Distribute items to chests
         List<NetworkChest> chestsInOrder = network.getChestsInOrder();
-        int chestIndex = 0;
-        List<ItemStack> overflowItems = new ArrayList<>(); // Track items that couldn't be placed
+        List<ItemStack> overflowItems = distributeItems(distributionPlan, chestsInOrder, network);
 
-        plugin.getLogger().info("[Hoardi] Distributing items to " + chestsInOrder.size() + " chests...");
-
-        for (String groupKey : sortedGroupKeys) {
-            List<String> subCategories = categoriesByGrouping.get(groupKey);
-
-            plugin.getLogger().info("[Hoardi] Processing group '" + groupKey + "' with sub-categories: " + subCategories);
-
-            int startChestIndex = chestIndex;
-
-            // Place all items from all sub-categories of this group
-            for (String subCategory : subCategories) {
-                List<ItemStack> items = itemsByCategory.get(subCategory);
-                if (items == null || items.isEmpty()) continue;
-
-                for (ItemStack item : items) {
-                    // Keep trying to place item until it's fully placed or we run out of chests
-                    ItemStack remaining = item.clone();
-
-                    while (remaining != null && remaining.getAmount() > 0) {
-                        if (chestIndex >= chestsInOrder.size()) {
-                            // No more chests - save for cramming later
-                            overflowItems.add(remaining.clone());
-                            break;
-                        }
-
-                        NetworkChest chest = chestsInOrder.get(chestIndex);
-                        Inventory inv = chest.getInventory();
-                        if (inv == null) {
-                            chestIndex++;
-                            continue;
-                        }
-
-                        // Try to add item
-                        HashMap<Integer, ItemStack> overflow = inv.addItem(remaining);
-
-                        if (overflow.isEmpty()) {
-                            // All placed successfully
-                            remaining = null;
-                        } else {
-                            // Chest is full, move to next and try with remaining items
-                            remaining = overflow.values().iterator().next();
-                            chestIndex++;
-                        }
-                    }
-                }
-            }
-
-            // Assign category group to all chests used
-            for (int i = startChestIndex; i <= chestIndex && i < chestsInOrder.size(); i++) {
-                NetworkChest assignedChest = chestsInOrder.get(i);
-                network.assignCategory(assignedChest.getLocation(), groupKey);
-                plugin.getLogger().info("[Hoardi]   Assigned chest #" + i + " at " + formatLocation(assignedChest.getLocation()) + " to category '" + groupKey + "'");
-            }
-
-            // ALWAYS move to next chest for a new category group (unless we're out of space)
-            if (chestIndex < chestsInOrder.size() && overflowItems.isEmpty()) {
-                NetworkChest currentChest = chestsInOrder.get(chestIndex);
-                double fillPct = currentChest.getFillPercentage();
-                plugin.getLogger().info("[Hoardi]   Chest #" + chestIndex + " is " + String.format("%.1f%%", fillPct * 100) + " full, moving to next for new category");
-                chestIndex++;
-            }
-        }
-
-        // Step 5: Cram overflow items into any chest with space (ignore category separation)
+        // Step 5: Handle overflow by cramming
         if (!overflowItems.isEmpty()) {
-            plugin.getLogger().warning("[Hoardi] Not enough space for clean separation! Cramming " + overflowItems.size() + " item stacks into available space...");
-
-            for (ItemStack item : overflowItems) {
-                ItemStack remaining = item.clone();
-
-                // Try ALL chests from the beginning
-                for (NetworkChest chest : chestsInOrder) {
-                    if (remaining == null || remaining.getAmount() <= 0) break;
-
-                    Inventory inv = chest.getInventory();
-                    if (inv == null) continue;
-
-                    HashMap<Integer, ItemStack> overflow = inv.addItem(remaining);
-                    if (overflow.isEmpty()) {
-                        remaining = null;
-                    } else {
-                        remaining = overflow.values().iterator().next();
-                    }
-                }
-
-                // If STILL can't place, this is a serious problem - drop at root
-                if (remaining != null && remaining.getAmount() > 0) {
-                    plugin.getLogger().severe("[Hoardi] CRITICAL: Could not fit " + remaining.getAmount() + "x " + remaining.getType() + " - dropping at root!");
-                    network.getRoot().getWorld().dropItemNaturally(network.getRoot(), remaining);
-                }
-            }
+            handleOverflow(overflowItems, chestsInOrder, network);
         }
 
         // Save network state
         plugin.getNetworkManager().save();
 
-        plugin.getLogger().info("[Hoardi] Full reorganize complete! " + categoriesByGrouping.size() + " category groups distributed.");
+        plugin.getLogger().info("[Hoardi] Full reorganize complete!");
     }
 
     /**
-     * Get grouping key for a category at a specific depth
-     * e.g., "decoration/glass/stained" at depth 2 returns "decoration/glass"
+     * Build distribution plan using hierarchical splitting
+     *
+     * Start with root categories, split if they need > 1 chest
      */
-    private String getGroupingKey(String category, int depth) {
-        String[] parts = category.split("/");
-        if (parts.length <= depth) {
-            return category; // Return full path if not deep enough
-        }
-        StringBuilder key = new StringBuilder();
-        for (int i = 0; i < depth && i < parts.length; i++) {
-            if (i > 0) key.append("/");
-            key.append(parts[i]);
-        }
-        return key.toString();
-    }
+    private List<CategoryGroup> buildDistributionPlan(Map<String, List<ItemStack>> itemsByLeafCategory, int availableChests) {
+        // Group leaf categories by root
+        Map<String, Map<String, List<ItemStack>>> itemsByRoot = new LinkedHashMap<>();
 
-    private String formatLocation(org.bukkit.Location loc) {
-        return String.format("(%d, %d, %d)", loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
+        for (Map.Entry<String, List<ItemStack>> entry : itemsByLeafCategory.entrySet()) {
+            String leafCategory = entry.getKey();
+            String root = hierarchy.getRootCategory(leafCategory);
+            if (root == null) root = "misc";
+
+            itemsByRoot.computeIfAbsent(root, k -> new LinkedHashMap<>())
+                       .put(leafCategory, entry.getValue());
+        }
+
+        // Sort roots by config order
+        List<String> sortedRoots = new ArrayList<>(itemsByRoot.keySet());
+        sortedRoots.sort(config::compareCategoriesByOrder);
+
+        // Build groups with splitting
+        List<CategoryGroup> groups = new ArrayList<>();
+
+        for (String root : sortedRoots) {
+            Map<String, List<ItemStack>> rootItems = itemsByRoot.get(root);
+            List<CategoryGroup> rootGroups = splitCategory(root, rootItems, 1);
+            groups.addAll(rootGroups);
+        }
+
+        // Check if we have too many groups for available chests
+        if (groups.size() > availableChests) {
+            plugin.getLogger().info("[Hoardi] Too many groups (" + groups.size() + ") for " + availableChests + " chests, merging...");
+            groups = mergeSmallGroups(groups, availableChests);
+        }
+
+        return groups;
     }
 
     /**
-     * Log the network layout showing all chests, their positions, and contents summary
+     * Recursively split a category if it needs more than 1 chest
+     *
+     * @param categoryPath Current category path (e.g., "wood" or "wood/oak")
+     * @param itemsByLeaf Map of leaf categories under this category to their items
+     * @param depth Current depth in hierarchy
+     * @return List of CategoryGroups (either this category as one group, or split into subcategories)
      */
-    private void logNetworkLayout(ChestNetwork network) {
-        plugin.getLogger().info("[Hoardi] --- Network Layout ---");
-        plugin.getLogger().info("[Hoardi] Root: " + formatLocation(network.getRoot()));
-
-        List<NetworkChest> chests = network.getChestsInOrder();
-
-        // Find bounding box
-        int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
-        int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
-        int minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
-
-        for (NetworkChest chest : chests) {
-            org.bukkit.Location loc = chest.getLocation();
-            minX = Math.min(minX, loc.getBlockX());
-            maxX = Math.max(maxX, loc.getBlockX());
-            minY = Math.min(minY, loc.getBlockY());
-            maxY = Math.max(maxY, loc.getBlockY());
-            minZ = Math.min(minZ, loc.getBlockZ());
-            maxZ = Math.max(maxZ, loc.getBlockZ());
+    private List<CategoryGroup> splitCategory(String categoryPath, Map<String, List<ItemStack>> itemsByLeaf, int depth) {
+        // Calculate total items in this category
+        int totalItems = 0;
+        List<ItemStack> allItems = new ArrayList<>();
+        for (List<ItemStack> items : itemsByLeaf.values()) {
+            for (ItemStack item : items) {
+                totalItems += item.getAmount();
+                allItems.add(item);
+            }
         }
 
-        plugin.getLogger().info("[Hoardi] Bounding box: X[" + minX + " to " + maxX + "] Y[" + minY + " to " + maxY + "] Z[" + minZ + " to " + maxZ + "]");
+        double chestsNeeded = (double) totalItems / CHEST_CAPACITY;
 
-        // Log each chest with its position number and contents
-        plugin.getLogger().info("[Hoardi] Chests in order (by spiral position):");
-        for (int i = 0; i < chests.size(); i++) {
-            NetworkChest chest = chests.get(i);
-            org.bukkit.Location loc = chest.getLocation();
-            org.bukkit.inventory.Inventory inv = chest.getInventory();
+        // If fits in 1 chest, don't split
+        if (chestsNeeded <= 1.0) {
+            CategoryGroup group = new CategoryGroup(categoryPath, allItems, totalItems, chestsNeeded);
+            return List.of(group);
+        }
 
-            StringBuilder contents = new StringBuilder();
-            if (inv != null) {
-                Map<Material, Integer> itemCounts = new HashMap<>();
-                for (org.bukkit.inventory.ItemStack item : inv.getContents()) {
-                    if (item != null) {
-                        itemCounts.merge(item.getType(), item.getAmount(), Integer::sum);
-                    }
-                }
+        // Need to split - group items by next level subcategory
+        Map<String, Map<String, List<ItemStack>>> bySubcategory = new LinkedHashMap<>();
 
-                if (itemCounts.isEmpty()) {
-                    contents.append("(empty)");
-                } else {
-                    int shown = 0;
-                    for (Map.Entry<Material, Integer> entry : itemCounts.entrySet()) {
-                        if (shown > 0) contents.append(", ");
-                        if (shown >= 5) {
-                            contents.append("...(+" + (itemCounts.size() - 5) + " more)");
-                            break;
-                        }
-                        contents.append(entry.getKey().name()).append("x").append(entry.getValue());
-                        shown++;
-                    }
-                }
+        for (Map.Entry<String, List<ItemStack>> entry : itemsByLeaf.entrySet()) {
+            String leafCategory = entry.getKey();
+            String subcategory = getSubcategoryAtDepth(leafCategory, categoryPath, depth + 1);
+
+            bySubcategory.computeIfAbsent(subcategory, k -> new LinkedHashMap<>())
+                         .put(leafCategory, entry.getValue());
+        }
+
+        // If we can't split further (only one subcategory or at leaf level), return as single group
+        if (bySubcategory.size() <= 1) {
+            // Can't split further - this becomes a multi-chest group for a single item type
+            CategoryGroup group = new CategoryGroup(categoryPath, allItems, totalItems, chestsNeeded);
+            return List.of(group);
+        }
+
+        // Sort subcategories by config order
+        List<String> sortedSubs = new ArrayList<>(bySubcategory.keySet());
+        sortedSubs.sort(config::compareCategoriesByOrder);
+
+        // Recursively split each subcategory
+        List<CategoryGroup> result = new ArrayList<>();
+        for (String sub : sortedSubs) {
+            Map<String, List<ItemStack>> subItems = bySubcategory.get(sub);
+            result.addAll(splitCategory(sub, subItems, depth + 1));
+        }
+
+        return result;
+    }
+
+    /**
+     * Get the subcategory at a specific depth relative to parent
+     * e.g., getSubcategoryAtDepth("wood/oak/planks", "wood", 2) returns "wood/oak"
+     */
+    private String getSubcategoryAtDepth(String fullPath, String parentPath, int targetDepth) {
+        String[] parts = fullPath.split("/");
+        if (targetDepth >= parts.length) {
+            return fullPath;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < targetDepth && i < parts.length; i++) {
+            if (i > 0) sb.append("/");
+            sb.append(parts[i]);
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Merge small groups when we have more groups than chests
+     * Merge by parent category (go up the hierarchy)
+     */
+    private List<CategoryGroup> mergeSmallGroups(List<CategoryGroup> groups, int availableChests) {
+        // Sort by item count ascending (smallest first to merge)
+        List<CategoryGroup> sortedGroups = new ArrayList<>(groups);
+        sortedGroups.sort(Comparator.comparingInt(g -> g.itemCount));
+
+        Map<String, CategoryGroup> mergedGroups = new LinkedHashMap<>();
+
+        for (CategoryGroup group : sortedGroups) {
+            // Determine merge key based on how many groups we have
+            String mergeKey;
+            if (mergedGroups.size() < availableChests - 3) {
+                // Still have room, keep more specific grouping
+                mergeKey = group.categoryPath;
             } else {
-                contents.append("(no inventory)");
+                // Running low, merge to parent or root
+                String parent = hierarchy.getParentCategory(group.categoryPath);
+                mergeKey = parent != null ? parent : hierarchy.getRootCategory(group.categoryPath);
+                if (mergeKey == null) mergeKey = "misc";
             }
 
-            String assignedCat = chest.getAssignedCategory();
-            String catInfo = assignedCat != null ? " [" + assignedCat + "]" : "";
-
-            plugin.getLogger().info("[Hoardi]   #" + i + " pos=" + chest.getPosition() +
-                " " + formatLocation(loc) + catInfo +
-                " -> " + contents);
+            CategoryGroup existing = mergedGroups.get(mergeKey);
+            if (existing != null) {
+                // Merge into existing group
+                existing.items.addAll(group.items);
+                existing.itemCount += group.itemCount;
+                existing.chestsNeeded = (double) existing.itemCount / CHEST_CAPACITY;
+            } else {
+                // Create new group with merge key
+                CategoryGroup newGroup = new CategoryGroup(mergeKey, new ArrayList<>(group.items), group.itemCount, group.chestsNeeded);
+                mergedGroups.put(mergeKey, newGroup);
+            }
         }
 
-        // Also log registered shelves
-        plugin.getLogger().info("[Hoardi] --- Registered Shelves ---");
-        var shelfManager = plugin.getShelfManager();
-        for (org.bukkit.Location shelfLoc : shelfManager.getTrackedShelves()) {
-            org.bukkit.Location chestLoc = shelfManager.getChestLocation(shelfLoc);
-            plugin.getLogger().info("[Hoardi]   Shelf " + formatLocation(shelfLoc) + " -> Chest " + formatLocation(chestLoc));
-        }
+        // Sort result by config order
+        List<CategoryGroup> result = new ArrayList<>(mergedGroups.values());
+        result.sort((a, b) -> config.compareCategoriesByOrder(a.categoryPath, b.categoryPath));
 
-        plugin.getLogger().info("[Hoardi] --- End Layout ---");
+        return result;
     }
 
     /**
-     * Collect all items from network grouped by category
+     * Distribute items from groups to chests
+     */
+    private List<ItemStack> distributeItems(List<CategoryGroup> groups, List<NetworkChest> chests, ChestNetwork network) {
+        List<ItemStack> overflow = new ArrayList<>();
+        int chestIndex = 0;
+
+        plugin.getLogger().info("[Hoardi] Distributing items to " + chests.size() + " chests...");
+
+        for (CategoryGroup group : groups) {
+            if (chestIndex >= chests.size()) {
+                // No more chests, all remaining items are overflow
+                overflow.addAll(group.items);
+                continue;
+            }
+
+            plugin.getLogger().info("[Hoardi] Placing '" + group.displayName + "' (" + group.itemCount + " items)...");
+
+            int startChestIndex = chestIndex;
+
+            // Place all items from this group
+            for (ItemStack item : group.items) {
+                ItemStack remaining = item.clone();
+
+                while (remaining != null && remaining.getAmount() > 0) {
+                    if (chestIndex >= chests.size()) {
+                        overflow.add(remaining.clone());
+                        break;
+                    }
+
+                    NetworkChest chest = chests.get(chestIndex);
+                    Inventory inv = chest.getInventory();
+                    if (inv == null) {
+                        chestIndex++;
+                        continue;
+                    }
+
+                    HashMap<Integer, ItemStack> leftover = inv.addItem(remaining);
+
+                    if (leftover.isEmpty()) {
+                        remaining = null;
+                    } else {
+                        remaining = leftover.values().iterator().next();
+                        chestIndex++;
+                    }
+                }
+            }
+
+            // Assign category to all chests used by this group
+            for (int i = startChestIndex; i <= chestIndex && i < chests.size(); i++) {
+                NetworkChest chest = chests.get(i);
+                network.assignCategory(chest.getLocation(), group.categoryPath);
+                plugin.getLogger().info("[Hoardi]   Chest #" + i + " -> " + group.displayName);
+            }
+
+            // Move to next chest for next category (unless we're out of space)
+            if (chestIndex < chests.size() && overflow.isEmpty()) {
+                chestIndex++;
+            }
+        }
+
+        return overflow;
+    }
+
+    /**
+     * Handle overflow items by cramming into any available space
+     */
+    private void handleOverflow(List<ItemStack> overflow, List<NetworkChest> chests, ChestNetwork network) {
+        plugin.getLogger().warning("[Hoardi] Cramming " + overflow.size() + " overflow stacks into available space...");
+
+        for (ItemStack item : overflow) {
+            ItemStack remaining = item.clone();
+
+            for (NetworkChest chest : chests) {
+                if (remaining == null || remaining.getAmount() <= 0) break;
+
+                Inventory inv = chest.getInventory();
+                if (inv == null) continue;
+
+                HashMap<Integer, ItemStack> leftover = inv.addItem(remaining);
+                if (leftover.isEmpty()) {
+                    remaining = null;
+                } else {
+                    remaining = leftover.values().iterator().next();
+                }
+            }
+
+            // If still can't place, drop at root
+            if (remaining != null && remaining.getAmount() > 0) {
+                plugin.getLogger().severe("[Hoardi] CRITICAL: Dropping " + remaining.getAmount() + "x " + remaining.getType() + " at root!");
+                network.getRoot().getWorld().dropItemNaturally(network.getRoot(), remaining);
+            }
+        }
+    }
+
+    /**
+     * Collect all items from network grouped by leaf category
      */
     private Map<String, List<ItemStack>> collectAllItems(ChestNetwork network) {
         Map<String, List<ItemStack>> itemsByCategory = new HashMap<>();
@@ -383,7 +361,6 @@ public class FullReorganizeTask extends BukkitRunnable {
             Inventory inv = chest.getInventory();
             if (inv == null) continue;
 
-            // Collect items
             for (int i = 0; i < inv.getSize(); i++) {
                 ItemStack item = inv.getItem(i);
                 if (item == null) continue;
@@ -391,14 +368,13 @@ public class FullReorganizeTask extends BukkitRunnable {
                 String category = hierarchy.getCategory(item.getType());
                 itemsByCategory.computeIfAbsent(category, k -> new ArrayList<>()).add(item.clone());
 
-                // Remove from chest
                 inv.setItem(i, null);
             }
         }
 
-        // Merge stacks where possible
+        // Merge stacks and sort by material
         for (Map.Entry<String, List<ItemStack>> entry : itemsByCategory.entrySet()) {
-            entry.setValue(mergeStacks(entry.getValue()));
+            entry.setValue(mergeAndSortStacks(entry.getValue()));
         }
 
         return itemsByCategory;
@@ -407,7 +383,7 @@ public class FullReorganizeTask extends BukkitRunnable {
     /**
      * Merge similar item stacks and sort by material name
      */
-    private List<ItemStack> mergeStacks(List<ItemStack> items) {
+    private List<ItemStack> mergeAndSortStacks(List<ItemStack> items) {
         Map<Material, Integer> totals = new HashMap<>();
         Map<Material, ItemStack> samples = new HashMap<>();
 
@@ -419,8 +395,6 @@ public class FullReorganizeTask extends BukkitRunnable {
         }
 
         List<ItemStack> merged = new ArrayList<>();
-
-        // Sort materials alphabetically by name
         List<Material> sortedMaterials = new ArrayList<>(totals.keySet());
         sortedMaterials.sort(Comparator.comparing(Material::name));
 
@@ -442,10 +416,55 @@ public class FullReorganizeTask extends BukkitRunnable {
     }
 
     /**
+     * Log collected items for debugging
+     */
+    private void logCollectedItems(Map<String, List<ItemStack>> itemsByCategory) {
+        plugin.getLogger().info("[Hoardi] Collected items by category:");
+
+        List<String> sortedCategories = new ArrayList<>(itemsByCategory.keySet());
+        sortedCategories.sort(config::compareCategoriesByOrder);
+
+        for (String cat : sortedCategories) {
+            List<ItemStack> items = itemsByCategory.get(cat);
+            int totalAmount = items.stream().mapToInt(ItemStack::getAmount).sum();
+
+            Set<Material> seen = new LinkedHashSet<>();
+            for (ItemStack item : items) {
+                seen.add(item.getType());
+            }
+
+            String itemTypes = seen.size() <= 5
+                ? String.join(", ", seen.stream().map(Material::name).toList())
+                : seen.stream().limit(5).map(Material::name).toList() + "...(+" + (seen.size() - 5) + " more)";
+
+            plugin.getLogger().info("[Hoardi]   " + cat + ": " + totalAmount + " items [" + itemTypes + "]");
+        }
+    }
+
+    /**
      * Manually trigger reorganization for a network
      */
     public static void trigger(HoarderPlugin plugin, ChestNetwork network) {
         FullReorganizeTask task = new FullReorganizeTask(plugin);
         task.reorganizeNetwork(network);
+    }
+
+    /**
+     * Helper class to hold a category group for distribution
+     */
+    private static class CategoryGroup {
+        final String categoryPath;
+        final String displayName;
+        final List<ItemStack> items;
+        int itemCount;
+        double chestsNeeded;
+
+        CategoryGroup(String categoryPath, List<ItemStack> items, int itemCount, double chestsNeeded) {
+            this.categoryPath = categoryPath;
+            this.displayName = categoryPath; // Could use hierarchy.getDisplayName() if needed
+            this.items = items;
+            this.itemCount = itemCount;
+            this.chestsNeeded = chestsNeeded;
+        }
     }
 }
