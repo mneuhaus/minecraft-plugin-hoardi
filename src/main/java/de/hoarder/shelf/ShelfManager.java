@@ -13,6 +13,7 @@ import org.bukkit.block.data.Directional;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.plugin.java.JavaPlugin;
+import de.hoarder.network.NetworkChest;
 
 import java.io.File;
 import java.io.IOException;
@@ -196,14 +197,17 @@ public class ShelfManager {
     }
 
     /**
-     * Register a shelf as tracking a chest
+     * Register a shelf as tracking a chest.
+     * For double chests, the canonical (LEFT half) location is stored.
      */
     public void registerShelf(Block shelf, Block chest) {
         Material shelfMaterial = shelf.getType();
-        shelfData.put(shelf.getLocation(), new ShelfData(chest.getLocation(), shelfMaterial));
+        // Use canonical location for double chests so both halves map to same chest
+        Location canonicalChestLoc = NetworkChest.getCanonicalLocation(chest.getLocation());
+        shelfData.put(shelf.getLocation(), new ShelfData(canonicalChestLoc, shelfMaterial));
         save();
         plugin.getLogger().info("Registered " + shelfMaterial.name() + " shelf at " + formatLocation(shelf.getLocation()) +
-            " for chest at " + formatLocation(chest.getLocation()));
+            " for chest at " + formatLocation(canonicalChestLoc));
     }
 
     /**
@@ -318,11 +322,13 @@ public class ShelfManager {
     }
 
     /**
-     * Check if a chest location has a shelf tracking it
+     * Check if a chest location has a shelf tracking it.
+     * For double chests, checks using the canonical location.
      */
     public boolean hasShelf(Location chestLoc) {
+        Location canonicalLoc = NetworkChest.getCanonicalLocation(chestLoc);
         for (ShelfData data : shelfData.values()) {
-            if (data.getChestLocation().equals(chestLoc)) {
+            if (data.getChestLocation().equals(canonicalLoc)) {
                 return true;
             }
         }
@@ -330,12 +336,14 @@ public class ShelfManager {
     }
 
     /**
-     * Get all shelves tracking a specific chest
+     * Get all shelves tracking a specific chest.
+     * For double chests, uses the canonical location.
      */
     public List<Location> getShelvesForChest(Location chestLoc) {
+        Location canonicalLoc = NetworkChest.getCanonicalLocation(chestLoc);
         List<Location> shelves = new ArrayList<>();
         for (Map.Entry<Location, ShelfData> entry : shelfData.entrySet()) {
-            if (entry.getValue().getChestLocation().equals(chestLoc)) {
+            if (entry.getValue().getChestLocation().equals(canonicalLoc)) {
                 shelves.add(entry.getKey());
             }
         }

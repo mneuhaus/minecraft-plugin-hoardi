@@ -68,53 +68,63 @@ public class ChestNetwork {
     }
 
     /**
-     * Add a chest to the network
+     * Add a chest to the network.
+     * For double chests, uses the canonical (LEFT half) location.
      */
     public void addChest(Location location) {
-        if (chests.containsKey(location)) {
+        // Normalize to canonical location for double chests
+        Location canonicalLoc = NetworkChest.getCanonicalLocation(location);
+
+        if (chests.containsKey(canonicalLoc)) {
             return;
         }
 
         // Calculate position
         Set<Location> existingLocations = new HashSet<>(chests.keySet());
-        existingLocations.add(location);
+        existingLocations.add(canonicalLoc);
         Map<Location, Integer> positions = positionCalculator.calculatePositions(root, existingLocations);
 
-        int position = positions.getOrDefault(location, chests.size() + 1);
-        NetworkChest networkChest = new NetworkChest(location, position);
-        chests.put(location, networkChest);
+        int position = positions.getOrDefault(canonicalLoc, chests.size() + 1);
+        NetworkChest networkChest = new NetworkChest(canonicalLoc, position);
+        chests.put(canonicalLoc, networkChest);
 
         // Recalculate all positions to keep them consistent
         recalculatePositions();
     }
 
     /**
-     * Remove a chest from the network
+     * Remove a chest from the network.
+     * For double chests, uses the canonical location.
      */
     public void removeChest(Location location) {
-        NetworkChest removed = chests.remove(location);
+        Location canonicalLoc = NetworkChest.getCanonicalLocation(location);
+        NetworkChest removed = chests.remove(canonicalLoc);
         if (removed != null) {
             // Remove from category assignments
             String category = removed.getAssignedCategory();
             if (category != null && categoryAssignments.containsKey(category)) {
-                categoryAssignments.get(category).remove(location);
+                categoryAssignments.get(category).remove(canonicalLoc);
             }
             recalculatePositions();
         }
     }
 
     /**
-     * Check if a chest is in the network
+     * Check if a chest is in the network.
+     * For double chests, checks if the canonical location is in the network.
      */
     public boolean containsChest(Location location) {
-        return chests.containsKey(location);
+        Location canonicalLoc = NetworkChest.getCanonicalLocation(location);
+        return chests.containsKey(canonicalLoc);
     }
 
     /**
-     * Get a chest by location
+     * Get a chest by location.
+     * For double chests, uses the canonical location.
      */
     public NetworkChest getChest(Location location) {
-        return chests.get(location);
+        Location canonicalLoc = NetworkChest.getCanonicalLocation(location);
+        return chests.get(canonicalLoc);
     }
 
     /**
@@ -168,22 +178,24 @@ public class ChestNetwork {
     }
 
     /**
-     * Assign a category to a chest
+     * Assign a category to a chest.
+     * For double chests, uses the canonical location.
      */
     public void assignCategory(Location chestLoc, String category) {
-        NetworkChest chest = chests.get(chestLoc);
+        Location canonicalLoc = NetworkChest.getCanonicalLocation(chestLoc);
+        NetworkChest chest = chests.get(canonicalLoc);
         if (chest == null) return;
 
         // Remove old assignment
         String oldCategory = chest.getAssignedCategory();
         if (oldCategory != null && categoryAssignments.containsKey(oldCategory)) {
-            categoryAssignments.get(oldCategory).remove(chestLoc);
+            categoryAssignments.get(oldCategory).remove(canonicalLoc);
         }
 
         // Add new assignment
         chest.setAssignedCategory(category);
         if (category != null) {
-            categoryAssignments.computeIfAbsent(category, k -> new ArrayList<>()).add(chestLoc);
+            categoryAssignments.computeIfAbsent(category, k -> new ArrayList<>()).add(canonicalLoc);
         }
     }
 

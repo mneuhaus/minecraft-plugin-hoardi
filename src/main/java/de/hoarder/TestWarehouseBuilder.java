@@ -65,6 +65,14 @@ public class TestWarehouseBuilder {
         int playerY = playerLoc.getBlockY();
         int playerZ = playerLoc.getBlockZ();
 
+        // TABULA RASA: Clear the area first
+        player.sendMessage("§a[Hoardi] §7Clearing area (tabula rasa)...");
+        int clearedBlocks = clearArea(world, blocks, playerX, playerY, playerZ, 8);
+        player.sendMessage("§7- §f" + clearedBlocks + "§7 blocks cleared");
+
+        // Clear old network/shelf data for this area
+        clearNetworkData(world, blocks, playerX, playerY, playerZ, 8);
+
         player.sendMessage("§a[Hoardi] §7Building test warehouse...");
 
         int blocksPlaced = 0;
@@ -181,6 +189,123 @@ public class TestWarehouseBuilder {
         }
 
         return true;
+    }
+
+    /**
+     * Clear the area before building - tabula rasa.
+     * Sets everything to air except the floor (grass_block at player Y-1).
+     *
+     * @param padding Extra blocks around the template bounds to clear
+     * @return Number of blocks cleared
+     */
+    private int clearArea(World world, List<ExportedBlock> blocks, int playerX, int playerY, int playerZ, int padding) {
+        // Calculate bounds from template
+        int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
+        int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
+        int minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
+
+        for (ExportedBlock block : blocks) {
+            minX = Math.min(minX, block.x);
+            maxX = Math.max(maxX, block.x);
+            minY = Math.min(minY, block.y);
+            maxY = Math.max(maxY, block.y);
+            minZ = Math.min(minZ, block.z);
+            maxZ = Math.max(maxZ, block.z);
+        }
+
+        // Add padding
+        minX -= padding;
+        maxX += padding;
+        minY -= 1; // Include one below for floor
+        maxY += padding;
+        minZ -= padding;
+        maxZ += padding;
+
+        int cleared = 0;
+
+        // Clear all blocks in the area
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    int worldX = playerX + x;
+                    int worldY = playerY + y;
+                    int worldZ = playerZ + z;
+
+                    Block block = world.getBlockAt(worldX, worldY, worldZ);
+
+                    // Floor level (y == -1 relative to player): set to grass
+                    if (y == -1) {
+                        if (block.getType() != Material.GRASS_BLOCK) {
+                            block.setType(Material.GRASS_BLOCK);
+                            cleared++;
+                        }
+                    } else {
+                        // Everything else: set to air
+                        if (block.getType() != Material.AIR) {
+                            block.setType(Material.AIR);
+                            cleared++;
+                        }
+                    }
+                }
+            }
+        }
+
+        return cleared;
+    }
+
+    /**
+     * Clear old network and shelf data for the area.
+     */
+    private void clearNetworkData(World world, List<ExportedBlock> blocks, int playerX, int playerY, int playerZ, int padding) {
+        ShelfManager shelfManager = plugin.getShelfManager();
+
+        // Calculate bounds
+        int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
+        int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
+        int minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
+
+        for (ExportedBlock block : blocks) {
+            minX = Math.min(minX, block.x);
+            maxX = Math.max(maxX, block.x);
+            minY = Math.min(minY, block.y);
+            maxY = Math.max(maxY, block.y);
+            minZ = Math.min(minZ, block.z);
+            maxZ = Math.max(maxZ, block.z);
+        }
+
+        // Add padding
+        minX -= padding;
+        maxX += padding;
+        minY -= 1;
+        maxY += padding;
+        minZ -= padding;
+        maxZ += padding;
+
+        // Unregister all shelves in the area
+        List<Location> shelvesToRemove = new ArrayList<>();
+        for (Location shelfLoc : shelfManager.getTrackedShelves()) {
+            if (shelfLoc.getWorld() != world) continue;
+
+            int relX = shelfLoc.getBlockX() - playerX;
+            int relY = shelfLoc.getBlockY() - playerY;
+            int relZ = shelfLoc.getBlockZ() - playerZ;
+
+            if (relX >= minX && relX <= maxX &&
+                relY >= minY && relY <= maxY &&
+                relZ >= minZ && relZ <= maxZ) {
+                shelvesToRemove.add(shelfLoc);
+            }
+        }
+
+        for (Location loc : shelvesToRemove) {
+            Location chestLoc = shelfManager.getChestLocation(loc);
+            shelfManager.unregisterShelf(loc);
+            if (chestLoc != null) {
+                plugin.getNetworkManager().onShelfUnregistered(chestLoc);
+            }
+        }
+
+        plugin.getLogger().info("[Hoardi] Cleared " + shelvesToRemove.size() + " shelf registrations from area");
     }
 
     /**

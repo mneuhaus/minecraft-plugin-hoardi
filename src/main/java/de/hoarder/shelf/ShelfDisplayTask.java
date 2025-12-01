@@ -229,7 +229,16 @@ public class ShelfDisplayTask extends BukkitRunnable {
     }
 
     /**
-     * Calculate 6-slot display for paired shelves
+     * Calculate 6-slot display for paired shelves (left shelf = 0,1,2 / right shelf = 3,4,5)
+     * Groups similar material variants (e.g., different wood shelves) to show diversity of block types.
+     *
+     * Display positions based on item count:
+     * - 1 item:  slot 1 (left middle)
+     * - 2 items: slots 1, 4 (both middles)
+     * - 3 items: slots 0, 1, 2 (left shelf full)
+     * - 4 items: slots 0, 1, 3, 4 (outer slots of both)
+     * - 5 items: slots 0, 1, 2, 3, 4
+     * - 6 items: all slots
      */
     private DisplayInfo calculateDisplayPaired(Inventory inventory) {
         Map<Material, Integer> itemCounts = new HashMap<>();
@@ -254,42 +263,66 @@ public class ShelfDisplayTask extends BukkitRunnable {
             return new DisplayInfo(slots);
         }
 
-        // Sort items by count (descending)
-        List<Map.Entry<Material, Integer>> sortedItems = itemCounts.entrySet().stream()
-            .sorted(Map.Entry.<Material, Integer>comparingByValue().reversed())
+        // Group by base type to show diversity (SHELF, CHEST, BARREL instead of OAK_SHELF, BIRCH_SHELF, JUNGLE_SHELF)
+        Map<String, GroupedItem> grouped = groupByBaseType(itemCounts, itemSamples);
+
+        // Sort grouped items by count (descending)
+        List<Map.Entry<String, GroupedItem>> sortedGroups = grouped.entrySet().stream()
+            .sorted((a, b) -> Integer.compare(b.getValue().totalCount, a.getValue().totalCount))
             .toList();
 
-        int uniqueTypes = sortedItems.size();
+        int uniqueGroups = sortedGroups.size();
         int maxItems = inventory.getSize() * 64;
 
-        if (uniqueTypes == 1) {
-            // Only 1 item type - show fill level across 6 slots
-            Material mat = sortedItems.get(0).getKey();
-            int count = sortedItems.get(0).getValue();
-            double fillPercentage = (double) count / maxItems;
+        // Slot positions for each item count (indices into the 6-slot array)
+        // Left shelf = 0,1,2   Right shelf = 3,4,5
+        int[][] slotPositions = {
+            {1},              // 1 item:  left middle
+            {1, 4},           // 2 items: both middles
+            {0, 1, 2},        // 3 items: left shelf full
+            {0, 1, 3, 4},     // 4 items: left full minus right-edge + right outer two
+            {0, 1, 2, 3, 4},  // 5 items: all except right-right
+            {0, 1, 2, 3, 4, 5} // 6 items: all slots
+        };
 
-            ItemStack sample = itemSamples.get(mat).clone();
+        if (uniqueGroups == 1) {
+            // Only 1 base type - show fill level
+            GroupedItem group = sortedGroups.get(0).getValue();
+            double fillPercentage = (double) group.totalCount / maxItems;
+
+            ItemStack sample = group.representative.clone();
             sample.setAmount(1);
 
-            // Fill slots based on percentage (each slot = ~16.7%)
-            int slotsToFill = Math.max(1, (int) Math.ceil(fillPercentage * 6));
-            // Center the items
-            int startSlot = (6 - slotsToFill) / 2;
-            for (int i = 0; i < slotsToFill; i++) {
-                slots[startSlot + i] = sample.clone();
+            // Determine how many slots to fill based on fill percentage
+            int slotsToFill;
+            if (fillPercentage < 0.17) {
+                slotsToFill = 1;
+            } else if (fillPercentage < 0.33) {
+                slotsToFill = 2;
+            } else if (fillPercentage < 0.50) {
+                slotsToFill = 3;
+            } else if (fillPercentage < 0.67) {
+                slotsToFill = 4;
+            } else if (fillPercentage < 0.83) {
+                slotsToFill = 5;
+            } else {
+                slotsToFill = 6;
+            }
+
+            int[] positions = slotPositions[slotsToFill - 1];
+            for (int pos : positions) {
+                slots[pos] = sample.clone();
             }
         } else {
-            // Multiple item types - show top items (up to 6)
-            int itemsToShow = Math.min(uniqueTypes, 6);
-
-            // Center items if less than 6
-            int startSlot = (6 - itemsToShow) / 2;
+            // Multiple base types - show top types for diversity
+            int itemsToShow = Math.min(uniqueGroups, 6);
+            int[] positions = slotPositions[itemsToShow - 1];
 
             for (int i = 0; i < itemsToShow; i++) {
-                Material material = sortedItems.get(i).getKey();
-                ItemStack sample = itemSamples.get(material).clone();
+                GroupedItem group = sortedGroups.get(i).getValue();
+                ItemStack sample = group.representative.clone();
                 sample.setAmount(1);
-                slots[startSlot + i] = sample;
+                slots[positions[i]] = sample;
             }
         }
 
@@ -298,6 +331,7 @@ public class ShelfDisplayTask extends BukkitRunnable {
 
     /**
      * Calculate what to display based on chest contents (3 slots)
+     * Groups similar material variants (e.g., different wood shelves) to show diversity of block types.
      */
     private DisplayInfo calculateDisplay(Inventory inventory) {
         Map<Material, Integer> itemCounts = new HashMap<>();
@@ -320,24 +354,26 @@ public class ShelfDisplayTask extends BukkitRunnable {
             return new DisplayInfo(new ItemStack[3]);
         }
 
-        // Sort items by count (descending)
-        List<Map.Entry<Material, Integer>> sortedItems = itemCounts.entrySet().stream()
-            .sorted(Map.Entry.<Material, Integer>comparingByValue().reversed())
+        // Group by base type to show diversity (SHELF, CHEST, BARREL instead of OAK_SHELF, BIRCH_SHELF, JUNGLE_SHELF)
+        Map<String, GroupedItem> grouped = groupByBaseType(itemCounts, itemSamples);
+
+        // Sort grouped items by count (descending)
+        List<Map.Entry<String, GroupedItem>> sortedGroups = grouped.entrySet().stream()
+            .sorted((a, b) -> Integer.compare(b.getValue().totalCount, a.getValue().totalCount))
             .toList();
 
         ItemStack[] slots = new ItemStack[3];
-        int uniqueTypes = sortedItems.size();
+        int uniqueGroups = sortedGroups.size();
 
-        Material mostCommon = sortedItems.get(0).getKey();
-        int mostCommonCount = sortedItems.get(0).getValue();
+        GroupedItem mostCommonGroup = sortedGroups.get(0).getValue();
         int maxItems = inventory.getSize() * 64;
-        double fillPercentage = (double) mostCommonCount / maxItems;
+        double fillPercentage = (double) mostCommonGroup.totalCount / maxItems;
 
-        ItemStack mostCommonSample = itemSamples.get(mostCommon).clone();
+        ItemStack mostCommonSample = mostCommonGroup.representative.clone();
         mostCommonSample.setAmount(1);
 
-        if (uniqueTypes == 1) {
-            // Only 1 item type - show fill level
+        if (uniqueGroups == 1) {
+            // Only 1 base type - show fill level
             if (fillPercentage < 0.50) {
                 slots[1] = mostCommonSample.clone(); // Centered
             } else if (fillPercentage < 0.80) {
@@ -348,10 +384,10 @@ public class ShelfDisplayTask extends BukkitRunnable {
                 slots[1] = mostCommonSample.clone();
                 slots[2] = mostCommonSample.clone();
             }
-        } else if (uniqueTypes == 2) {
-            // 2 item types
-            Material secondMost = sortedItems.get(1).getKey();
-            ItemStack secondSample = itemSamples.get(secondMost).clone();
+        } else if (uniqueGroups == 2) {
+            // 2 base types
+            GroupedItem secondGroup = sortedGroups.get(1).getValue();
+            ItemStack secondSample = secondGroup.representative.clone();
             secondSample.setAmount(1);
 
             slots[0] = mostCommonSample.clone();
@@ -362,10 +398,10 @@ public class ShelfDisplayTask extends BukkitRunnable {
                 slots[1] = secondSample;
             }
         } else {
-            // 3+ item types - show top 3
+            // 3+ base types - show top 3 different types
             for (int i = 0; i < 3; i++) {
-                Material material = sortedItems.get(i).getKey();
-                ItemStack sample = itemSamples.get(material).clone();
+                GroupedItem group = sortedGroups.get(i).getValue();
+                ItemStack sample = group.representative.clone();
                 sample.setAmount(1);
                 slots[i] = sample;
             }
@@ -429,5 +465,93 @@ public class ShelfDisplayTask extends BukkitRunnable {
         DisplayInfo(ItemStack[] slots) {
             this.slots = slots;
         }
+    }
+
+    /**
+     * Get the "base type" of a material for grouping similar variants together.
+     * E.g., OAK_SHELF, BIRCH_SHELF, JUNGLE_SHELF all become "SHELF"
+     * This allows showing different block types rather than color/wood variants.
+     */
+    private static String getBaseType(Material material) {
+        String name = material.name();
+
+        // Wood variant prefixes to strip
+        String[] woodPrefixes = {
+            "OAK_", "SPRUCE_", "BIRCH_", "JUNGLE_", "ACACIA_", "DARK_OAK_",
+            "MANGROVE_", "CHERRY_", "PALE_OAK_", "BAMBOO_", "CRIMSON_", "WARPED_"
+        };
+
+        // Color variant prefixes to strip
+        String[] colorPrefixes = {
+            "WHITE_", "ORANGE_", "MAGENTA_", "LIGHT_BLUE_", "YELLOW_", "LIME_",
+            "PINK_", "GRAY_", "LIGHT_GRAY_", "CYAN_", "PURPLE_", "BLUE_",
+            "BROWN_", "GREEN_", "RED_", "BLACK_"
+        };
+
+        // Copper oxidation prefixes to strip
+        String[] copperPrefixes = {
+            "WAXED_OXIDIZED_", "WAXED_WEATHERED_", "WAXED_EXPOSED_", "WAXED_",
+            "OXIDIZED_", "WEATHERED_", "EXPOSED_"
+        };
+
+        // Try copper prefixes first (they're longer and more specific)
+        for (String prefix : copperPrefixes) {
+            if (name.startsWith(prefix)) {
+                return name.substring(prefix.length());
+            }
+        }
+
+        // Try wood prefixes
+        for (String prefix : woodPrefixes) {
+            if (name.startsWith(prefix)) {
+                return name.substring(prefix.length());
+            }
+        }
+
+        // Try color prefixes
+        for (String prefix : colorPrefixes) {
+            if (name.startsWith(prefix)) {
+                return name.substring(prefix.length());
+            }
+        }
+
+        return name;
+    }
+
+    /**
+     * Group items by their base type for display diversity.
+     * Returns a map of base type -> (total count, representative ItemStack)
+     */
+    private static class GroupedItem {
+        int totalCount;
+        ItemStack representative;
+
+        GroupedItem(int count, ItemStack item) {
+            this.totalCount = count;
+            this.representative = item;
+        }
+    }
+
+    private Map<String, GroupedItem> groupByBaseType(Map<Material, Integer> itemCounts, Map<Material, ItemStack> itemSamples) {
+        Map<String, GroupedItem> grouped = new HashMap<>();
+
+        for (Map.Entry<Material, Integer> entry : itemCounts.entrySet()) {
+            Material mat = entry.getKey();
+            int count = entry.getValue();
+            String baseType = getBaseType(mat);
+
+            GroupedItem existing = grouped.get(baseType);
+            if (existing == null) {
+                grouped.put(baseType, new GroupedItem(count, itemSamples.get(mat).clone()));
+            } else {
+                existing.totalCount += count;
+                // Keep the one with higher individual count as representative
+                if (count > itemCounts.getOrDefault(existing.representative.getType(), 0)) {
+                    existing.representative = itemSamples.get(mat).clone();
+                }
+            }
+        }
+
+        return grouped;
     }
 }
