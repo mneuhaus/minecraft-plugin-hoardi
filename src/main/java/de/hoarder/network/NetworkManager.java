@@ -6,6 +6,7 @@ import de.hoarder.shelf.ShelfManager;
 import de.hoarder.sorting.FullReorganizeTask;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -16,7 +17,8 @@ import java.io.IOException;
 import java.util.*;
 
 /**
- * Manages all chest networks across worlds
+ * Manages all chest networks across worlds.
+ * Networks are separated by shelf material type and proximity clustering.
  */
 public class NetworkManager {
 
@@ -112,8 +114,19 @@ public class NetworkManager {
                         int rootY = ((Number) networkData.get("root_y")).intValue();
                         int rootZ = ((Number) networkData.get("root_z")).intValue();
 
+                        // Load shelf material (default to OAK_SHELF for old configs)
+                        String materialStr = (String) networkData.get("shelf_material");
+                        Material shelfMaterial = Material.OAK_SHELF;
+                        if (materialStr != null) {
+                            try {
+                                shelfMaterial = Material.valueOf(materialStr);
+                            } catch (IllegalArgumentException e) {
+                                plugin.getLogger().warning("Unknown shelf material: " + materialStr + ", defaulting to OAK_SHELF");
+                            }
+                        }
+
                         Location root = new Location(world, rootX, rootY, rootZ);
-                        ChestNetwork network = new ChestNetwork(world, root, config);
+                        ChestNetwork network = new ChestNetwork(world, root, shelfMaterial, config);
 
                         @SuppressWarnings("unchecked")
                         List<Map<?, ?>> chestsList = (List<Map<?, ?>>) networkData.get("chests");
@@ -138,7 +151,8 @@ public class NetworkManager {
                         }
 
                         networks.computeIfAbsent(worldName, k -> new ArrayList<>()).add(network);
-                        plugin.getLogger().info("Loaded network in " + worldName + " at " + formatLocation(root) + " with " + network.size() + " chests");
+                        String materialName = formatMaterialName(shelfMaterial);
+                        plugin.getLogger().info("Loaded " + materialName + " network in " + worldName + " at " + formatLocation(root) + " with " + network.size() + " chests");
                     } catch (Exception e) {
                         plugin.getLogger().warning("Failed to load network: " + e.getMessage());
                     }
@@ -170,6 +184,9 @@ public class NetworkManager {
                 networkData.put("root_y", root.getBlockY());
                 networkData.put("root_z", root.getBlockZ());
 
+                // Save shelf material
+                networkData.put("shelf_material", network.getShelfMaterial().name());
+
                 // Save chests
                 List<Map<String, Object>> chestsList = new ArrayList<>();
                 for (NetworkChest chest : network.getChestsInOrder()) {
@@ -198,23 +215,34 @@ public class NetworkManager {
 
     /**
      * Get or create network for a location (finds nearby network or creates new one)
+     * @deprecated Use getOrCreateNetwork(World, Location, Material) instead
      */
+    @Deprecated
     public ChestNetwork getOrCreateNetwork(World world, Location root) {
+        return getOrCreateNetwork(world, root, Material.OAK_SHELF);
+    }
+
+    /**
+     * Get or create network for a location with specific material type
+     */
+    public ChestNetwork getOrCreateNetwork(World world, Location root, Material shelfMaterial) {
         String worldName = world.getName();
         List<ChestNetwork> worldNetworks = networks.computeIfAbsent(worldName, k -> new ArrayList<>());
 
-        // Find existing network within radius
+        // Find existing network within radius with same material
         int maxRadius = config.getNetworkRadius();
         for (ChestNetwork network : worldNetworks) {
-            if (isWithinRadius(root, network.getRoot(), maxRadius)) {
+            if (network.getShelfMaterial() == shelfMaterial &&
+                isWithinRadius(root, network.getRoot(), maxRadius)) {
                 return network;
             }
         }
 
         // No nearby network found, create new one
-        ChestNetwork network = new ChestNetwork(world, root, config);
+        ChestNetwork network = new ChestNetwork(world, root, shelfMaterial, config);
         worldNetworks.add(network);
-        plugin.getLogger().info("Created new network in " + worldName + " at " + formatLocation(root));
+        String materialName = formatMaterialName(shelfMaterial);
+        plugin.getLogger().info("Created new " + materialName + " network in " + worldName + " at " + formatLocation(root));
         return network;
     }
 
@@ -255,14 +283,29 @@ public class NetworkManager {
 
     /**
      * Find nearby network for a location (within network_radius)
+     * @deprecated Use findNearbyNetwork(Location, Material) instead
      */
+    @Deprecated
     public ChestNetwork findNearbyNetwork(Location loc) {
+        return findNearbyNetwork(loc, null);
+    }
+
+    /**
+     * Find nearby network for a location with specific material type (within network_radius)
+     * If material is null, returns any nearby network (legacy behavior)
+     */
+    public ChestNetwork findNearbyNetwork(Location loc, Material shelfMaterial) {
         if (loc.getWorld() == null) return null;
         List<ChestNetwork> worldNetworks = networks.get(loc.getWorld().getName());
         if (worldNetworks == null) return null;
 
         int maxRadius = config.getNetworkRadius();
         for (ChestNetwork network : worldNetworks) {
+            // Skip networks with different material (unless material is null for legacy compatibility)
+            if (shelfMaterial != null && network.getShelfMaterial() != shelfMaterial) {
+                continue;
+            }
+
             if (isWithinRadius(loc, network.getRoot(), maxRadius)) {
                 return network;
             }
@@ -278,17 +321,35 @@ public class NetworkManager {
 
     /**
      * Called when a shelf is registered for a chest
+     * @deprecated Use onShelfRegistered(Location, Location) instead
      */
+    @Deprecated
     public void onShelfRegistered(Location chestLoc) {
+        onShelfRegistered(null, chestLoc);
+    }
+
+    /**
+     * Called when a shelf is registered for a chest
+     * @param shelfLoc The shelf location (used to determine material)
+     * @param chestLoc The chest location
+     */
+    public void onShelfRegistered(Location shelfLoc, Location chestLoc) {
         if (chestLoc.getWorld() == null) return;
 
-        // Find nearby network or create a new one
-        ChestNetwork network = findNearbyNetwork(chestLoc);
+        // Get shelf material from the shelf manager
+        Material shelfMaterial = shelfLoc != null ? shelfManager.getShelfMaterial(shelfLoc) : Material.OAK_SHELF;
+        if (shelfMaterial == null) {
+            shelfMaterial = Material.OAK_SHELF;
+        }
+
+        // Find nearby network with same material or create a new one
+        ChestNetwork network = findNearbyNetwork(chestLoc, shelfMaterial);
 
         if (network == null) {
             // Create new network with this chest as root
-            network = getOrCreateNetwork(chestLoc.getWorld(), chestLoc);
-            plugin.getLogger().info("Created new network with root at " + formatLocation(chestLoc));
+            network = getOrCreateNetwork(chestLoc.getWorld(), chestLoc, shelfMaterial);
+            String materialName = formatMaterialName(shelfMaterial);
+            plugin.getLogger().info("Created new " + materialName + " network with root at " + formatLocation(chestLoc));
         }
 
         // Add chest to network
@@ -297,7 +358,8 @@ public class NetworkManager {
             save();
 
             if (config.isDebug()) {
-                plugin.getLogger().info("Added chest to network: " + formatLocation(chestLoc));
+                String materialName = formatMaterialName(shelfMaterial);
+                plugin.getLogger().info("[DEBUG] Added chest to " + materialName + " network: " + formatLocation(chestLoc));
             }
         }
     }
@@ -424,7 +486,7 @@ public class NetworkManager {
             plugin.getLogger().info("[DEBUG] FullReorganizeTask completed");
         }
 
-        player.sendMessage("§a[Hoardi] §7Items sorted!");
+        player.sendMessage("§a[Hoarder] §7Items sorted!");
     }
 
     /**
@@ -461,6 +523,88 @@ public class NetworkManager {
             all.addAll(worldNetworks);
         }
         return all;
+    }
+
+    /**
+     * Find nearby shelves of the same material that could form a network with the given location.
+     * This is useful for notifying players about potential network connections.
+     */
+    public List<Location> findNearbyShelvesSameMaterial(Location shelfLoc, Material material) {
+        List<Location> nearby = new ArrayList<>();
+        Set<Location> sameMaterial = shelfManager.getTrackedShelvesByMaterial(material);
+        int maxRadius = config.getNetworkRadius();
+
+        for (Location other : sameMaterial) {
+            if (!other.equals(shelfLoc) &&
+                areInSameWorld(shelfLoc, other) &&
+                getDistance(shelfLoc, other) <= maxRadius) {
+                nearby.add(other);
+            }
+        }
+
+        return nearby;
+    }
+
+    private boolean areInSameWorld(Location a, Location b) {
+        World worldA = a.getWorld();
+        World worldB = b.getWorld();
+        if (worldA == null || worldB == null) {
+            return false;
+        }
+        return worldA.equals(worldB);
+    }
+
+    private double getDistance(Location a, Location b) {
+        // 3D Euclidean distance
+        double dx = a.getBlockX() - b.getBlockX();
+        double dy = a.getBlockY() - b.getBlockY();
+        double dz = a.getBlockZ() - b.getBlockZ();
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    /**
+     * Get a summary of all networks for display purposes
+     */
+    public String getNetworksSummary() {
+        Collection<ChestNetwork> allNetworks = getAllNetworks();
+
+        if (allNetworks.isEmpty()) {
+            return "No storage networks found.";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Found ").append(allNetworks.size()).append(" network(s):\n");
+
+        int i = 1;
+        for (ChestNetwork network : allNetworks) {
+            String materialName = formatMaterialName(network.getShelfMaterial());
+            sb.append(String.format("  %d. %s network: %d chest(s)\n",
+                i++, materialName, network.size()));
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * Format material name for display (e.g., OAK_SHELF -> Oak)
+     */
+    private String formatMaterialName(Material material) {
+        String name = material.name();
+        // Remove _SHELF suffix and capitalize
+        if (name.endsWith("_SHELF")) {
+            name = name.substring(0, name.length() - 6);
+        }
+        // Convert DARK_OAK to Dark Oak
+        String[] parts = name.toLowerCase().split("_");
+        StringBuilder result = new StringBuilder();
+        for (String part : parts) {
+            if (!part.isEmpty()) {
+                result.append(Character.toUpperCase(part.charAt(0)))
+                      .append(part.substring(1))
+                      .append(" ");
+            }
+        }
+        return result.toString().trim();
     }
 
     /**

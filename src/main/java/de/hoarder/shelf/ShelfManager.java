@@ -19,15 +19,37 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Manages shelf blocks that display chest contents
+ * Manages shelf blocks that display chest contents.
+ * Tracks shelf material type for material-based network separation.
  */
 public class ShelfManager {
 
     private final JavaPlugin plugin;
     private final File dataFile;
 
-    // Maps shelf location to the chest location it's connected to
-    private final Map<Location, Location> shelfToChest = new ConcurrentHashMap<>();
+    // Maps shelf location to shelf data (chest location + material)
+    private final Map<Location, ShelfData> shelfData = new ConcurrentHashMap<>();
+
+    /**
+     * Data class holding shelf information
+     */
+    public static class ShelfData {
+        private final Location chestLocation;
+        private final Material shelfMaterial;
+
+        public ShelfData(Location chestLocation, Material shelfMaterial) {
+            this.chestLocation = chestLocation;
+            this.shelfMaterial = shelfMaterial;
+        }
+
+        public Location getChestLocation() {
+            return chestLocation;
+        }
+
+        public Material getShelfMaterial() {
+            return shelfMaterial;
+        }
+    }
 
     // All shelf material types
     private static final Set<Material> SHELF_MATERIALS = Set.of(
@@ -54,7 +76,7 @@ public class ShelfManager {
      * Load shelf-chest mappings from file
      */
     public void load() {
-        shelfToChest.clear();
+        shelfData.clear();
 
         if (!dataFile.exists()) {
             return;
@@ -75,20 +97,31 @@ public class ShelfManager {
                 int chestY = ((Number) entry.get("chest_y")).intValue();
                 int chestZ = ((Number) entry.get("chest_z")).intValue();
 
+                // Load shelf material (default to OAK_SHELF for old configs)
+                String materialStr = (String) entry.get("shelf_material");
+                Material shelfMaterial = Material.OAK_SHELF;
+                if (materialStr != null) {
+                    try {
+                        shelfMaterial = Material.valueOf(materialStr);
+                    } catch (IllegalArgumentException e) {
+                        plugin.getLogger().warning("Unknown shelf material: " + materialStr + ", defaulting to OAK_SHELF");
+                    }
+                }
+
                 World sWorld = Bukkit.getWorld(shelfWorld);
                 World cWorld = Bukkit.getWorld(chestWorld);
 
                 if (sWorld != null && cWorld != null) {
                     Location shelfLoc = new Location(sWorld, shelfX, shelfY, shelfZ);
                     Location chestLoc = new Location(cWorld, chestX, chestY, chestZ);
-                    shelfToChest.put(shelfLoc, chestLoc);
+                    shelfData.put(shelfLoc, new ShelfData(chestLoc, shelfMaterial));
                 }
             } catch (Exception e) {
                 plugin.getLogger().warning("Failed to load shelf entry: " + e.getMessage());
             }
         }
 
-        plugin.getLogger().info("Loaded " + shelfToChest.size() + " shelf-chest connections");
+        plugin.getLogger().info("Loaded " + shelfData.size() + " shelf-chest connections");
     }
 
     /**
@@ -98,24 +131,26 @@ public class ShelfManager {
         YamlConfiguration config = new YamlConfiguration();
         List<Map<String, Object>> shelves = new ArrayList<>();
 
-        for (Map.Entry<Location, Location> entry : shelfToChest.entrySet()) {
+        for (Map.Entry<Location, ShelfData> entry : shelfData.entrySet()) {
             Location shelfLoc = entry.getKey();
-            Location chestLoc = entry.getValue();
+            ShelfData data = entry.getValue();
+            Location chestLoc = data.getChestLocation();
 
             if (shelfLoc.getWorld() == null || chestLoc.getWorld() == null) {
                 continue;
             }
 
-            Map<String, Object> data = new HashMap<>();
-            data.put("shelf_world", shelfLoc.getWorld().getName());
-            data.put("shelf_x", shelfLoc.getBlockX());
-            data.put("shelf_y", shelfLoc.getBlockY());
-            data.put("shelf_z", shelfLoc.getBlockZ());
-            data.put("chest_world", chestLoc.getWorld().getName());
-            data.put("chest_x", chestLoc.getBlockX());
-            data.put("chest_y", chestLoc.getBlockY());
-            data.put("chest_z", chestLoc.getBlockZ());
-            shelves.add(data);
+            Map<String, Object> shelfEntry = new HashMap<>();
+            shelfEntry.put("shelf_world", shelfLoc.getWorld().getName());
+            shelfEntry.put("shelf_x", shelfLoc.getBlockX());
+            shelfEntry.put("shelf_y", shelfLoc.getBlockY());
+            shelfEntry.put("shelf_z", shelfLoc.getBlockZ());
+            shelfEntry.put("chest_world", chestLoc.getWorld().getName());
+            shelfEntry.put("chest_x", chestLoc.getBlockX());
+            shelfEntry.put("chest_y", chestLoc.getBlockY());
+            shelfEntry.put("chest_z", chestLoc.getBlockZ());
+            shelfEntry.put("shelf_material", data.getShelfMaterial().name());
+            shelves.add(shelfEntry);
         }
 
         config.set("shelves", shelves);
@@ -160,9 +195,10 @@ public class ShelfManager {
      * Register a shelf as tracking a chest
      */
     public void registerShelf(Block shelf, Block chest) {
-        shelfToChest.put(shelf.getLocation(), chest.getLocation());
+        Material shelfMaterial = shelf.getType();
+        shelfData.put(shelf.getLocation(), new ShelfData(chest.getLocation(), shelfMaterial));
         save();
-        plugin.getLogger().info("Registered shelf at " + formatLocation(shelf.getLocation()) +
+        plugin.getLogger().info("Registered " + shelfMaterial.name() + " shelf at " + formatLocation(shelf.getLocation()) +
             " for chest at " + formatLocation(chest.getLocation()));
     }
 
@@ -170,7 +206,7 @@ public class ShelfManager {
      * Unregister a shelf
      */
     public void unregisterShelf(Location shelfLoc) {
-        if (shelfToChest.remove(shelfLoc) != null) {
+        if (shelfData.remove(shelfLoc) != null) {
             save();
         }
     }
@@ -179,35 +215,61 @@ public class ShelfManager {
      * Check if a shelf is being tracked
      */
     public boolean isTracked(Location shelfLoc) {
-        return shelfToChest.containsKey(shelfLoc);
+        return shelfData.containsKey(shelfLoc);
     }
 
     /**
      * Get the chest location for a tracked shelf
      */
     public Location getChestLocation(Location shelfLoc) {
-        return shelfToChest.get(shelfLoc);
+        ShelfData data = shelfData.get(shelfLoc);
+        return data != null ? data.getChestLocation() : null;
+    }
+
+    /**
+     * Get the shelf material for a tracked shelf
+     */
+    public Material getShelfMaterial(Location shelfLoc) {
+        ShelfData data = shelfData.get(shelfLoc);
+        return data != null ? data.getShelfMaterial() : null;
     }
 
     /**
      * Get all tracked shelf locations
      */
     public Set<Location> getTrackedShelves() {
-        return new HashSet<>(shelfToChest.keySet());
+        return new HashSet<>(shelfData.keySet());
+    }
+
+    /**
+     * Get all tracked shelf locations of a specific material
+     */
+    public Set<Location> getTrackedShelvesByMaterial(Material material) {
+        Set<Location> result = new HashSet<>();
+        for (Map.Entry<Location, ShelfData> entry : shelfData.entrySet()) {
+            if (entry.getValue().getShelfMaterial() == material) {
+                result.add(entry.getKey());
+            }
+        }
+        return result;
     }
 
     /**
      * Get all tracked chest locations (unique)
      */
     public Set<Location> getTrackedChests() {
-        return new HashSet<>(shelfToChest.values());
+        Set<Location> chests = new HashSet<>();
+        for (ShelfData data : shelfData.values()) {
+            chests.add(data.getChestLocation());
+        }
+        return chests;
     }
 
     /**
      * Get the number of tracked shelves
      */
     public int getTrackedCount() {
-        return shelfToChest.size();
+        return shelfData.size();
     }
 
     /**
@@ -255,7 +317,12 @@ public class ShelfManager {
      * Check if a chest location has a shelf tracking it
      */
     public boolean hasShelf(Location chestLoc) {
-        return shelfToChest.containsValue(chestLoc);
+        for (ShelfData data : shelfData.values()) {
+            if (data.getChestLocation().equals(chestLoc)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -263,8 +330,8 @@ public class ShelfManager {
      */
     public List<Location> getShelvesForChest(Location chestLoc) {
         List<Location> shelves = new ArrayList<>();
-        for (Map.Entry<Location, Location> entry : shelfToChest.entrySet()) {
-            if (entry.getValue().equals(chestLoc)) {
+        for (Map.Entry<Location, ShelfData> entry : shelfData.entrySet()) {
+            if (entry.getValue().getChestLocation().equals(chestLoc)) {
                 shelves.add(entry.getKey());
             }
         }
@@ -276,12 +343,12 @@ public class ShelfManager {
      */
     public void cleanup() {
         boolean changed = false;
-        Iterator<Map.Entry<Location, Location>> iterator = shelfToChest.entrySet().iterator();
+        Iterator<Map.Entry<Location, ShelfData>> iterator = shelfData.entrySet().iterator();
 
         while (iterator.hasNext()) {
-            Map.Entry<Location, Location> entry = iterator.next();
+            Map.Entry<Location, ShelfData> entry = iterator.next();
             Location shelfLoc = entry.getKey();
-            Location chestLoc = entry.getValue();
+            Location chestLoc = entry.getValue().getChestLocation();
 
             // Check if the shelf still exists
             if (!isShelf(shelfLoc.getBlock())) {

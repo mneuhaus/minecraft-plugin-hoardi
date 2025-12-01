@@ -1,6 +1,7 @@
 package de.hoarder;
 
 import de.hoarder.commands.HoarderCommand;
+import de.hoarder.config.ConfigMigrator;
 import de.hoarder.config.HoarderConfig;
 import de.hoarder.network.NetworkManager;
 import de.hoarder.shelf.ShelfDisplayTask;
@@ -25,6 +26,12 @@ public class HoarderPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        // Run migrations from old plugin versions (Hoardi, ChestPreview -> Hoarder)
+        ConfigMigrator migrator = new ConfigMigrator(this);
+        if (migrator.migrate()) {
+            getLogger().info("Migration complete! Old data has been imported.");
+        }
+
         // Load configuration
         hoarderConfig = new HoarderConfig(this);
         hoarderConfig.load();
@@ -64,8 +71,9 @@ public class HoarderPlugin extends JavaPlugin {
             );
         }
 
-        getLogger().info("Hoardi enabled!");
+        getLogger().info("Hoarder enabled!");
         getLogger().info("Sneak + place a shelf against a chest to add it to the network!");
+        getLogger().info("Use different shelf materials (Oak, Birch, etc.) for separate networks!");
     }
 
     @Override
@@ -86,7 +94,7 @@ public class HoarderPlugin extends JavaPlugin {
             networkManager.save();
         }
 
-        getLogger().info("Hoardi disabled!");
+        getLogger().info("Hoarder disabled!");
     }
 
     /**
@@ -96,7 +104,7 @@ public class HoarderPlugin extends JavaPlugin {
         hoarderConfig.load();
         shelfManager.load();
         networkManager.load();
-        getLogger().info("Hoardi reloaded!");
+        getLogger().info("Hoarder reloaded!");
     }
 
     // Getters

@@ -1,17 +1,19 @@
-# Hoardi
+# Hoarder
 
 **Intelligent auto-sorting chest network with shelf previews for Minecraft**
 
-Hoardi is a Paper plugin for Minecraft 1.21+ that transforms your storage into a smart, self-organizing system. Connect chests with decorative shelves, and items automatically sort themselves into logical categories.
+Hoarder is a Paper plugin for Minecraft 1.21+ that transforms your storage into a smart, self-organizing system. Connect chests with decorative shelves, and items automatically sort themselves into logical categories.
 
 ## Features
 
 - **Auto-Sorting**: Items automatically move to appropriate chests based on their category
 - **Shelf Previews**: Shelves display the top items in each chest at a glance
+- **Material-Based Networks**: Use different shelf types (Oak, Birch, etc.) to create separate storage networks
 - **Smart Categories**: 300+ items organized into intuitive hierarchical categories
 - **Floor Detection**: Multi-level storage systems supported with intelligent pathfinding
 - **No Item Loss**: Overflow protection ensures items are never lost during sorting
 - **Zero Configuration**: Works out of the box - just place shelves against chests
+- **Config Migration**: Automatically migrates data from older plugin versions
 
 ## Requirements
 
@@ -31,16 +33,26 @@ Hoardi is a Paper plugin for Minecraft 1.21+ that transforms your storage into a
 2. **Sneak + place a shelf** against the front of each chest
 3. **That's it!** Items will auto-sort when you close any chest in the network
 
+### Multiple Networks
+
+Use different shelf materials to create **separate storage networks**:
+- **Oak shelves** → Main storage network
+- **Birch shelves** → Secondary storage (e.g., building materials)
+- **Dark Oak shelves** → Another network (e.g., valuables)
+
+Shelves within 50 blocks of each other (configurable) with the **same material** form one network. Different materials = different networks, even if they're next to each other!
+
 ## Commands
 
 | Command | Description | Permission |
 |---------|-------------|------------|
 | `/hoardi` | Show help | - |
 | `/hoardi info` | Display network information | - |
-| `/hoardi setroot` | Set the network root (look at a chest) | `hoardi.admin` |
-| `/hoardi sort` | Trigger full reorganization | `hoardi.admin` |
+| `/hoardi networks` | Show all networks summary | - |
+| `/hoardi setroot` | Set the network root (look at a chest) | `hoarder.admin` |
+| `/hoardi sort` | Trigger full reorganization | `hoarder.admin` |
 | `/hoardi stats` | Show detailed statistics | - |
-| `/hoardi reload` | Reload configuration | `hoardi.admin` |
+| `/hoardi reload` | Reload configuration | `hoarder.admin` |
 
 **Alias**: `/hr`
 
@@ -48,13 +60,15 @@ Hoardi is a Paper plugin for Minecraft 1.21+ that transforms your storage into a
 
 | Permission | Description | Default |
 |------------|-------------|---------|
-| `hoardi.use` | Create shelves and use the network | Everyone |
-| `hoardi.admin` | Admin commands (setroot, sort, reload) | OP |
+| `hoarder.use` | Create shelves and use the network | Everyone |
+| `hoarder.admin` | Admin commands (setroot, sort, reload) | OP |
 
 ## How It Works
 
 ### Shelf Registration
 When you sneak + place a shelf against a chest, the chest joins your storage network. The shelf will display the top 3 items in the chest, giving you a visual preview of contents.
+
+The **shelf material type** (Oak, Birch, Spruce, etc.) determines which network the chest belongs to. This allows you to have multiple independent sorting networks in the same area.
 
 ### Shelf Fill Level Display
 
@@ -225,13 +239,16 @@ Items not in any category go to `misc`.
 
 ```bash
 # Clone the repository
-git clone https://github.com/mneuhaus/minecraft-plugin-hoardi.git
-cd minecraft-plugin-hoardi
+git clone https://github.com/mneuhaus/hoarder.git
+cd hoarder
 
-# Build with Maven (Docker)
+# Build with Maven (requires Java 21 - use Docker if needed)
+docker run --rm -v "$(pwd)":/app -w /app maven:3.9-eclipse-temurin-21 mvn clean package
+
+# Or with make commands
 make build
 
-# Or build and deploy to test server
+# Build and deploy to test server
 make deploy
 make restart
 ```
@@ -258,3 +275,19 @@ Created by Marc Neuhaus
 ---
 
 **Happy Hoarding!**
+
+## Supported Shelf Types
+
+All Minecraft 1.21+ shelf variants are supported:
+- Oak Shelf
+- Spruce Shelf
+- Birch Shelf
+- Jungle Shelf
+- Acacia Shelf
+- Dark Oak Shelf
+- Mangrove Shelf
+- Cherry Shelf
+- Pale Oak Shelf
+- Bamboo Shelf
+- Crimson Shelf
+- Warped Shelf

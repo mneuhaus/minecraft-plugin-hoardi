@@ -2,16 +2,19 @@ package de.hoarder.network;
 
 import de.hoarder.config.HoarderConfig;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 
 import java.util.*;
 
 /**
- * Represents a network of connected chests with a root
+ * Represents a network of connected chests with a root.
+ * Networks are separated by shelf material type (Oak, Birch, etc.).
  */
 public class ChestNetwork {
 
     private final World world;
+    private final Material shelfMaterial;
     private Location root;
     private final Map<Location, NetworkChest> chests = new LinkedHashMap<>();
     private final RowBasedPositionCalculator positionCalculator;
@@ -20,11 +23,19 @@ public class ChestNetwork {
     // Category assignments (category -> list of chest locations)
     private final Map<String, List<Location>> categoryAssignments = new HashMap<>();
 
-    public ChestNetwork(World world, Location root, HoarderConfig config) {
+    public ChestNetwork(World world, Location root, Material shelfMaterial, HoarderConfig config) {
         this.world = world;
         this.root = root;
+        this.shelfMaterial = shelfMaterial;
         this.config = config;
         this.positionCalculator = new RowBasedPositionCalculator(config);
+    }
+
+    /**
+     * Legacy constructor without material (defaults to OAK_SHELF for migration)
+     */
+    public ChestNetwork(World world, Location root, HoarderConfig config) {
+        this(world, root, Material.OAK_SHELF, config);
     }
 
     /**
@@ -32,6 +43,13 @@ public class ChestNetwork {
      */
     public World getWorld() {
         return world;
+    }
+
+    /**
+     * Get the shelf material type for this network
+     */
+    public Material getShelfMaterial() {
+        return shelfMaterial;
     }
 
     /**

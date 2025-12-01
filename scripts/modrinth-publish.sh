@@ -12,7 +12,9 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Load environment variables
 if [ -f "$PROJECT_DIR/.env" ]; then
-    export $(grep -v '^#' "$PROJECT_DIR/.env" | xargs)
+    set -a
+    source "$PROJECT_DIR/.env"
+    set +a
 fi
 
 # Configuration
@@ -32,7 +34,7 @@ Hoardi creates intelligent chest networks that automatically sort items by confi
 ## Features
 
 - **Auto-sorting network**: Connect chests to a root chest and items get sorted automatically
-- **Shelf displays**: Shelves show a preview of chest contents (requires 1.21+ shelf blocks)
+- **Shelf displays**: Shelves show a preview of chest contents (requires 1.21.10+ shelf blocks)
 - **Configurable categories**: Define your own item hierarchies (wood, ores, tools, etc.)
 - **Smart splitting**: Categories auto-split into sub-categories when chests fill up
 - **Spatial ordering**: Chests are ordered by position (row-based or spiral patterns)
@@ -51,7 +53,7 @@ Hoardi creates intelligent chest networks that automatically sort items by confi
 
 ## Requirements
 
-- Paper 1.21+ (uses shelf blocks from 1.21)
+- Paper 1.21.10+ (requires shelf blocks)
 - Java 21+"
 
 # Colors/formatting
@@ -87,22 +89,23 @@ get_pom_version() {
     grep -m1 '<version>' "$PROJECT_DIR/pom.xml" | sed 's/.*<version>\(.*\)<\/version>.*/\1/'
 }
 
-# Check if project exists
+# Check if project exists - returns "exists:PROJECT_ID" or "not_found:"
 check_project_exists() {
-    local response
-    response=$(curl -s -w "\n%{http_code}" \
+    local response http_code body
+
+    response=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
         -H "Authorization: $MODRINTH_TOKEN" \
         -H "User-Agent: $USER_AGENT" \
         "$API_BASE/project/$PROJECT_SLUG")
 
-    local http_code=$(echo "$response" | tail -1)
+    http_code=$(echo "$response" | grep "HTTP_CODE:" | cut -d: -f2)
+    body=$(echo "$response" | grep -v "HTTP_CODE:")
 
     if [ "$http_code" = "200" ]; then
-        echo "exists"
-        # Extract and return project ID
-        echo "$response" | head -n -1 | jq -r '.id'
+        local project_id=$(echo "$body" | jq -r '.id')
+        echo "exists:$project_id"
     else
-        echo "not_found"
+        echo "not_found:"
     fi
 }
 
@@ -130,7 +133,7 @@ create_project() {
         "version_number": "$version",
         "changelog": $(echo "$changelog" | jq -Rs .),
         "dependencies": [],
-        "game_versions": ["1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"],
+        "game_versions": ["1.21.10"],
         "version_type": "release",
         "loaders": ["paper", "purpur", "spigot", "bukkit"],
         "featured": true,
@@ -142,16 +145,16 @@ create_project() {
 EOF
 )
 
-    local response
-    response=$(curl -s -w "\n%{http_code}" \
+    local response http_code body
+    response=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
         -X POST "$API_BASE/project" \
         -H "Authorization: $MODRINTH_TOKEN" \
         -H "User-Agent: $USER_AGENT" \
         -F "data=$project_data" \
         -F "jar=@$jar_path;type=application/java-archive")
 
-    local http_code=$(echo "$response" | tail -1)
-    local body=$(echo "$response" | head -n -1)
+    http_code=$(echo "$response" | grep "HTTP_CODE:" | cut -d: -f2)
+    body=$(echo "$response" | grep -v "HTTP_CODE:")
 
     if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
         local project_id=$(echo "$body" | jq -r '.id')
@@ -187,7 +190,7 @@ upload_version() {
     "version_number": "$version",
     "changelog": $(echo "$changelog" | jq -Rs .),
     "dependencies": [],
-    "game_versions": ["1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"],
+    "game_versions": ["1.21.10"],
     "version_type": "release",
     "loaders": ["paper", "purpur", "spigot", "bukkit"],
     "featured": true,
@@ -197,16 +200,16 @@ upload_version() {
 EOF
 )
 
-    local response
-    response=$(curl -s -w "\n%{http_code}" \
+    local response http_code body
+    response=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
         -X POST "$API_BASE/version" \
         -H "Authorization: $MODRINTH_TOKEN" \
         -H "User-Agent: $USER_AGENT" \
         -F "data=$version_data" \
         -F "jar=@$jar_path;type=application/java-archive")
 
-    local http_code=$(echo "$response" | tail -1)
-    local body=$(echo "$response" | head -n -1)
+    http_code=$(echo "$response" | grep "HTTP_CODE:" | cut -d: -f2)
+    body=$(echo "$response" | grep -v "HTTP_CODE:")
 
     if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
         local version_id=$(echo "$body" | jq -r '.id')
@@ -246,10 +249,10 @@ main() {
     # Check if project exists
     log_info "Checking if project exists on Modrinth..."
     local result=$(check_project_exists)
-    local status=$(echo "$result" | head -1)
+    local status="${result%%:*}"
+    local project_id="${result##*:}"
 
     if [ "$status" = "exists" ]; then
-        local project_id=$(echo "$result" | tail -1)
         log_info "Project found (ID: $project_id)"
         upload_version "$project_id" "$jar_path" "$version" "$changelog"
     else

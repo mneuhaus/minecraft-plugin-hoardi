@@ -3,6 +3,7 @@ package de.hoarder.shelf;
 import de.hoarder.HoarderPlugin;
 import de.hoarder.network.NetworkManager;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.Chest;
 import org.bukkit.block.DoubleChest;
@@ -19,6 +20,8 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
+
+import java.util.List;
 
 /**
  * Handles events for shelf-chest connections and triggers sorting
@@ -47,7 +50,7 @@ public class ShelfListener implements Listener {
         }
 
         Player player = event.getPlayer();
-        if (!player.hasPermission("hoardi.use")) {
+        if (!player.hasPermission("hoarder.use")) {
             return;
         }
 
@@ -59,13 +62,29 @@ public class ShelfListener implements Listener {
                 // Sneak + place = create preview shelf and add to network
                 shelfManager.registerShelf(placed, chest);
 
-                // Check if this chest should be added to a network
-                networkManager.onShelfRegistered(chest.getLocation());
+                // Check if this chest should be added to a network (pass shelf location for material)
+                networkManager.onShelfRegistered(placed.getLocation(), chest.getLocation());
 
-                player.sendMessage("§a[Hoardi] §7Shelf registered! It will display the top 3 items from the chest.");
-                player.sendMessage("§7Click the shelf to open the chest. Items will be auto-sorted!");
+                // Get shelf material for messaging
+                Material shelfMaterial = placed.getType();
+                String materialName = formatMaterialName(shelfMaterial);
+
+                // Check for nearby shelves of same material
+                List<Location> nearby = networkManager.findNearbyShelvesSameMaterial(
+                    placed.getLocation(), shelfMaterial);
+
+                player.sendMessage("§a[Hoarder] §7" + materialName + " shelf registered!");
+
+                if (nearby.isEmpty()) {
+                    player.sendMessage("§7This is the start of a new §e" + materialName + "§7 network.");
+                } else {
+                    player.sendMessage("§7Added to existing §e" + materialName + "§7 network (" +
+                        (nearby.size() + 1) + " chests).");
+                }
+
+                player.sendMessage("§7Click the shelf to open the chest. Use different shelf types for separate networks!");
             } else {
-                player.sendMessage("§e[Hoardi] §7Tip: Sneak + place a shelf to add this chest to your storage network!");
+                player.sendMessage("§e[Hoarder] §7Tip: Sneak + place a shelf to add this chest to your storage network!");
             }
         }
     }
@@ -99,6 +118,7 @@ public class ShelfListener implements Listener {
 
         // If a tracked shelf is broken, unregister it
         if (shelfManager.isShelf(broken) && shelfManager.isTracked(brokenLoc)) {
+            Material material = shelfManager.getShelfMaterial(brokenLoc);
             Location chestLoc = shelfManager.getChestLocation(brokenLoc);
             shelfManager.unregisterShelf(brokenLoc);
 
@@ -107,7 +127,8 @@ public class ShelfListener implements Listener {
                 networkManager.onShelfUnregistered(chestLoc);
             }
 
-            event.getPlayer().sendMessage("§e[Hoardi] §7Shelf removed from network.");
+            String materialName = material != null ? formatMaterialName(material) : "Preview";
+            event.getPlayer().sendMessage("§e[Hoarder] §7" + materialName + " shelf removed from network.");
             return;
         }
 
@@ -227,5 +248,25 @@ public class ShelfListener implements Listener {
 
     private String formatLocation(Location loc) {
         return String.format("(%d, %d, %d)", loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
+    }
+
+    /**
+     * Format material name for display (e.g., OAK_SHELF -> Oak)
+     */
+    private String formatMaterialName(Material material) {
+        String name = material.name();
+        if (name.endsWith("_SHELF")) {
+            name = name.substring(0, name.length() - 6);
+        }
+        String[] parts = name.toLowerCase().split("_");
+        StringBuilder result = new StringBuilder();
+        for (String part : parts) {
+            if (!part.isEmpty()) {
+                result.append(Character.toUpperCase(part.charAt(0)))
+                      .append(part.substring(1))
+                      .append(" ");
+            }
+        }
+        return result.toString().trim();
     }
 }
