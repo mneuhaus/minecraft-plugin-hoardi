@@ -100,7 +100,7 @@ public class ShelfListener implements Listener {
      * Handle shelf breaking - clear display items BEFORE the block breaks
      * This prevents the displayed items from dropping
      */
-    @EventHandler(priority = EventPriority.LOWEST)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onShelfBreakEarly(BlockBreakEvent event) {
         Block broken = event.getBlock();
         Location brokenLoc = broken.getLocation();

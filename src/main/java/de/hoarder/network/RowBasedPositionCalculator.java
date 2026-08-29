@@ -1,9 +1,11 @@
 package de.hoarder.network;
 
 import de.hoarder.config.HoarderConfig;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 
 import java.util.*;
+import java.util.logging.Logger;
 
 /**
  * Calculates positions using nearest-neighbor pathfinding per floor
@@ -26,6 +28,7 @@ public class RowBasedPositionCalculator {
 
     private final HoarderConfig config;
     private static final int MAX_FLOOR_GAP = 1; // Max Y gap within same floor (1 = adjacent blocks only)
+    private static final Logger LOGGER = Bukkit.getLogger();
 
     public RowBasedPositionCalculator(HoarderConfig config) {
         this.config = config;
@@ -50,11 +53,28 @@ public class RowBasedPositionCalculator {
 
         // Sort floors by distance from root Y (nearest first)
         int rootY = root.getBlockY();
+
+        if (config.isDebug()) {
+            LOGGER.info("[Hoardi] Root at Y=" + rootY + ", detected " + floors.size() + " floors:");
+            for (Floor f : floors) {
+                int dist = Math.min(Math.abs(f.minY - rootY), Math.abs(f.maxY - rootY));
+                LOGGER.info("[Hoardi]   Floor Y=" + f.minY + " to " + f.maxY + " (" + f.chests.size() + " chests, distance=" + dist + ")");
+            }
+        }
+
         floors.sort((a, b) -> {
             int distA = Math.min(Math.abs(a.minY - rootY), Math.abs(a.maxY - rootY));
             int distB = Math.min(Math.abs(b.minY - rootY), Math.abs(b.maxY - rootY));
             return Integer.compare(distA, distB);
         });
+
+        if (config.isDebug()) {
+            LOGGER.info("[Hoardi] After sorting by distance:");
+            for (Floor f : floors) {
+                int dist = Math.min(Math.abs(f.minY - rootY), Math.abs(f.maxY - rootY));
+                LOGGER.info("[Hoardi]   Floor Y=" + f.minY + " to " + f.maxY + " (distance=" + dist + ")");
+            }
+        }
 
         // Step 2: Process each floor
         Map<Location, Integer> positions = new HashMap<>();
@@ -62,7 +82,13 @@ public class RowBasedPositionCalculator {
         int rootX = root.getBlockX();
         int rootZ = root.getBlockZ();
 
+        int floorNum = 0;
         for (Floor floor : floors) {
+            floorNum++;
+            if (config.isDebug()) {
+                LOGGER.info("[Hoardi] Processing Floor #" + floorNum + " (Y=" + floor.minY + " to " + floor.maxY + "):");
+            }
+
             // Group chests on this floor into columns
             Map<String, List<Location>> columns = groupIntoColumns(floor.chests);
 
@@ -87,11 +113,15 @@ public class RowBasedPositionCalculator {
             List<String> orderedColumns = pathfindColumns(rootX, rootZ, columnCenters);
 
             // Assign positions
+            int floorStartPos = position;
             for (String columnKey : orderedColumns) {
                 List<Location> column = columns.get(columnKey);
                 for (Location chest : column) {
                     positions.put(chest, position++);
                 }
+            }
+            if (config.isDebug()) {
+                LOGGER.info("[Hoardi]   Assigned positions " + floorStartPos + "-" + (position-1) + " to " + floor.chests.size() + " chests");
             }
         }
 

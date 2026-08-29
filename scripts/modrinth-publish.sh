@@ -2,10 +2,10 @@
 # Modrinth Publishing Script for Hoardi
 # Usage: ./scripts/modrinth-publish.sh [version] [changelog]
 #
-# First publish: Creates a new project on Modrinth
-# Subsequent: Uploads a new version to existing project
+# First publish: Creates a draft project on Modrinth
+# Subsequent: Uploads a new version to the existing project
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -34,7 +34,7 @@ Hoardi creates intelligent chest networks that automatically sort items by confi
 ## Features
 
 - **Auto-sorting network**: Connect chests to a root chest and items get sorted automatically
-- **Shelf displays**: Shelves show a preview of chest contents (requires 1.21.10+ shelf blocks)
+- **Shelf displays**: Shelves show a preview of chest contents (requires 26.1.2+ shelf blocks)
 - **Configurable categories**: Define your own item hierarchies (wood, ores, tools, etc.)
 - **Smart splitting**: Categories auto-split into sub-categories when chests fill up
 - **Spatial ordering**: Chests are ordered by position (row-based or spiral patterns)
@@ -48,13 +48,13 @@ Hoardi creates intelligent chest networks that automatically sort items by confi
 
 ## Permissions
 
-- \`hoardi.admin\` - Manage the plugin (default: op)
-- \`hoardi.use\` - Create shelves and use the network (default: true)
+- \`hoarder.admin\` - Manage the plugin (default: op)
+- \`hoarder.use\` - Create shelves and use the network (default: true)
 
 ## Requirements
 
-- Paper 1.21.10+ (requires shelf blocks)
-- Java 21+"
+- Paper 26.1.2+ (requires shelf blocks)
+- Java 25+"
 
 # Colors/formatting
 RED='\033[0;31m'
@@ -68,7 +68,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 # Check requirements
 check_requirements() {
-    if [ -z "$MODRINTH_TOKEN" ]; then
+    if [ -z "${MODRINTH_TOKEN:-}" ]; then
         log_error "MODRINTH_TOKEN not set. Add it to .env file."
         exit 1
     fi
@@ -81,6 +81,16 @@ check_requirements() {
     if ! command -v jq &> /dev/null; then
         log_error "jq is required but not installed."
         exit 1
+    fi
+}
+
+record_project_id() {
+    local project_id="$1"
+
+    if [ -f "$PROJECT_DIR/.env" ] && grep -q '^MODRINTH_PROJECT_ID=' "$PROJECT_DIR/.env"; then
+        perl -0pi -e "s/^MODRINTH_PROJECT_ID=.*/MODRINTH_PROJECT_ID=$project_id/m" "$PROJECT_DIR/.env"
+    else
+        printf '\nMODRINTH_PROJECT_ID=%s\n' "$project_id" >> "$PROJECT_DIR/.env"
     fi
 }
 
@@ -109,38 +119,22 @@ check_project_exists() {
     fi
 }
 
-# Create new project
 create_project() {
-    local jar_path="$1"
-    local version="$2"
-    local changelog="$3"
-
     log_info "Creating new project on Modrinth..."
 
-    # Build the multipart form data
     local project_data=$(cat <<EOF
 {
     "slug": "$PROJECT_SLUG",
     "title": "$PROJECT_NAME",
-    "description": $(echo "$PROJECT_DESCRIPTION" | jq -Rs .),
+    "description": "$PROJECT_SUMMARY",
     "body": $(echo "$PROJECT_DESCRIPTION" | jq -Rs .),
-    "categories": ["storage", "utility"],
+    "categories": ["management", "storage", "utility"],
     "client_side": "unsupported",
     "server_side": "required",
     "project_type": "mod",
-    "initial_versions": [{
-        "name": "$PROJECT_NAME v$version",
-        "version_number": "$version",
-        "changelog": $(echo "$changelog" | jq -Rs .),
-        "dependencies": [],
-        "game_versions": ["1.21.10"],
-        "version_type": "release",
-        "loaders": ["paper", "purpur", "spigot", "bukkit"],
-        "featured": true,
-        "file_parts": ["jar"]
-    }],
     "license_id": "MIT",
-    "is_draft": false
+    "is_draft": true,
+    "initial_versions": []
 }
 EOF
 )
@@ -150,8 +144,7 @@ EOF
         -X POST "$API_BASE/project" \
         -H "Authorization: $MODRINTH_TOKEN" \
         -H "User-Agent: $USER_AGENT" \
-        -F "data=$project_data" \
-        -F "jar=@$jar_path;type=application/java-archive")
+        -F "data=$project_data")
 
     http_code=$(echo "$response" | grep "HTTP_CODE:" | cut -d: -f2)
     body=$(echo "$response" | grep -v "HTTP_CODE:")
@@ -159,15 +152,9 @@ EOF
     if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
         local project_id=$(echo "$body" | jq -r '.id')
         log_info "Project created successfully! ID: $project_id"
-
-        # Save project ID to .env
-        if grep -q "^MODRINTH_PROJECT_ID=" "$PROJECT_DIR/.env"; then
-            sed -i '' "s/^MODRINTH_PROJECT_ID=.*/MODRINTH_PROJECT_ID=$project_id/" "$PROJECT_DIR/.env"
-        else
-            echo "MODRINTH_PROJECT_ID=$project_id" >> "$PROJECT_DIR/.env"
-        fi
-
-        echo "https://modrinth.com/mod/$PROJECT_SLUG"
+        record_project_id "$project_id"
+        CREATED_PROJECT_ID="$project_id"
+        echo "https://modrinth.com/plugin/$PROJECT_SLUG"
     else
         log_error "Failed to create project (HTTP $http_code)"
         echo "$body" | jq . 2>/dev/null || echo "$body"
@@ -175,7 +162,6 @@ EOF
     fi
 }
 
-# Upload new version to existing project
 upload_version() {
     local project_id="$1"
     local jar_path="$2"
@@ -190,7 +176,7 @@ upload_version() {
     "version_number": "$version",
     "changelog": $(echo "$changelog" | jq -Rs .),
     "dependencies": [],
-    "game_versions": ["1.21.10"],
+    "game_versions": ["26.1.2", "26.2"],
     "version_type": "release",
     "loaders": ["paper", "purpur", "spigot", "bukkit"],
     "featured": true,
@@ -214,11 +200,66 @@ EOF
     if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
         local version_id=$(echo "$body" | jq -r '.id')
         log_info "Version uploaded successfully! ID: $version_id"
-        echo "https://modrinth.com/mod/$PROJECT_SLUG/version/$version"
+        echo "https://modrinth.com/plugin/$PROJECT_SLUG/version/$version"
     else
         log_error "Failed to upload version (HTTP $http_code)"
         echo "$body" | jq . 2>/dev/null || echo "$body"
         exit 1
+    fi
+}
+
+submit_project_for_review() {
+    local project_id="$1"
+    local response http_code body current_status
+
+    response=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
+        -H "Authorization: $MODRINTH_TOKEN" \
+        -H "User-Agent: $USER_AGENT" \
+        "$API_BASE/project/$project_id")
+
+    http_code=$(echo "$response" | grep "HTTP_CODE:" | cut -d: -f2)
+    body=$(echo "$response" | grep -v "HTTP_CODE:")
+
+    if [ "$http_code" != "200" ]; then
+        log_warn "Could not check project status before review submission (HTTP $http_code)."
+        return
+    fi
+
+    current_status=$(echo "$body" | jq -r '.status')
+
+    case "$current_status" in
+        draft)
+            log_info "Submitting $PROJECT_NAME for Modrinth review..."
+            ;;
+        processing)
+            log_info "Project is already queued for Modrinth review."
+            return
+            ;;
+        approved|unlisted)
+            log_info "Project status is already $current_status."
+            return
+            ;;
+        *)
+            log_warn "Project status is $current_status; leaving review state unchanged."
+            return
+            ;;
+    esac
+
+    response=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
+        -X PATCH "$API_BASE/project/$project_id" \
+        -H "Authorization: $MODRINTH_TOKEN" \
+        -H "User-Agent: $USER_AGENT" \
+        -H "Content-Type: application/json" \
+        --data '{"status":"processing","requested_status":"approved"}')
+
+    http_code=$(echo "$response" | grep "HTTP_CODE:" | cut -d: -f2)
+    body=$(echo "$response" | grep -v "HTTP_CODE:")
+
+    if [ "$http_code" = "204" ]; then
+        log_info "Project submitted for Modrinth review."
+    else
+        log_warn "Could not submit project for review (HTTP $http_code)."
+        echo "$body" | jq . 2>/dev/null || echo "$body"
     fi
 }
 
@@ -254,10 +295,15 @@ main() {
 
     if [ "$status" = "exists" ]; then
         log_info "Project found (ID: $project_id)"
+        record_project_id "$project_id"
         upload_version "$project_id" "$jar_path" "$version" "$changelog"
+        submit_project_for_review "$project_id"
     else
         log_info "Project not found. Creating new project..."
-        create_project "$jar_path" "$version" "$changelog"
+        CREATED_PROJECT_ID=""
+        create_project
+        upload_version "$CREATED_PROJECT_ID" "$jar_path" "$version" "$changelog"
+        submit_project_for_review "$CREATED_PROJECT_ID"
     fi
 }
 

@@ -1,5 +1,7 @@
 # Hoardi Plugin Makefile
 
+VERSION = $(shell grep -m1 '<version>' pom.xml | sed 's/.*<version>\(.*\)<\/version>.*/\1/')
+
 # Testserver plugin directory
 TESTSERVER_PLUGINS = test/data/plugins
 
@@ -11,15 +13,16 @@ all: build
 # Build the plugin using Docker Maven
 build:
 	@echo "Building Hoardi plugin..."
-	@docker run --rm -v "$(shell pwd)":/app -w /app maven:3.9-eclipse-temurin-21 mvn clean package -q
-	@echo "Build complete: target/Hoardi-1.0.0.jar"
+	@docker run --rm -v "$(shell pwd)":/app -w /app maven:3.9-eclipse-temurin-25 mvn clean package -q
+	@echo "Build complete: target/Hoardi-$(VERSION).jar"
 
 # Build and copy to testserver
 deploy: build
 	@echo "Deploying to testserver..."
 	@mkdir -p $(TESTSERVER_PLUGINS)
-	@cp target/Hoardi-1.0.0.jar $(TESTSERVER_PLUGINS)/
-	@echo "Deployed to $(TESTSERVER_PLUGINS)/Hoardi-1.0.0.jar"
+	@rm -f $(TESTSERVER_PLUGINS)/Hoardi-*.jar
+	@cp target/Hoardi-$(VERSION).jar $(TESTSERVER_PLUGINS)/
+	@echo "Deployed to $(TESTSERVER_PLUGINS)/Hoardi-$(VERSION).jar"
 
 # Start testserver
 start:
@@ -50,7 +53,7 @@ logs:
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
-	@docker run --rm -v "$(shell pwd)":/app -w /app maven:3.9-eclipse-temurin-21 mvn clean -q
+	@docker run --rm -v "$(shell pwd)":/app -w /app maven:3.9-eclipse-temurin-25 mvn clean -q
 	@echo "Clean complete"
 
 # Publish to Modrinth

@@ -1,6 +1,6 @@
 # Hoarder Configuration
 # Intelligent auto-sorting chest network
-# Updated for Minecraft 1.21.10
+# Updated for Minecraft 26.1.2
 
 settings:
   # Radius in blocks to search for network chests from root

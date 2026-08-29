@@ -31,20 +31,28 @@ import java.util.Random;
 
 /**
  * Builds a test warehouse from an exported JSON template.
- * Template is loaded from plugins/Hoardi/export.json or bundled default.
+ * Templates are loaded from plugins/Hoardi/templates/{name}.json or bundled default.
  */
 public class TestWarehouseBuilder {
 
     private final HoarderPlugin plugin;
+    private static final String DEFAULT_TEMPLATE = "default";
 
     public TestWarehouseBuilder(HoarderPlugin plugin) {
         this.plugin = plugin;
     }
 
     /**
-     * Build the test warehouse at the player's position.
+     * Build the test warehouse at the player's position using the default template.
      */
     public boolean build(Player player) {
+        return build(player, DEFAULT_TEMPLATE);
+    }
+
+    /**
+     * Build the test warehouse at the player's position using a named template.
+     */
+    public boolean build(Player player, String templateName) {
         Location playerLoc = player.getLocation();
         World world = playerLoc.getWorld();
 
@@ -54,9 +62,11 @@ public class TestWarehouseBuilder {
         }
 
         // Load template from JSON
-        List<ExportedBlock> blocks = loadTemplate();
+        List<ExportedBlock> blocks = loadTemplate(templateName);
         if (blocks == null || blocks.isEmpty()) {
-            player.sendMessage("§c[Hoardi] §7No template found. Export a warehouse first with /hoardi export");
+            player.sendMessage("§c[Hoardi] §7No template '§f" + templateName + "§7' found.");
+            player.sendMessage("§7Export one first with: §f/hoardi export " + templateName);
+            player.sendMessage("§7Available templates: §f" + String.join(", ", listTemplates()));
             return false;
         }
 
@@ -138,10 +148,13 @@ public class TestWarehouseBuilder {
             // Track chest locations for filling
             if (shelfManager.isChest(block)) {
                 chestLocations.add(loc);
-                // Identify standalone chest at relative position (5, 6, -13) - upper floor
-                if (blockData.x == 5 && blockData.y == 6 && blockData.z == -13) {
-                    standaloneChestLoc = loc;
-                }
+            }
+
+            // Track ender chest location - will be replaced with regular chest for shulker boxes
+            if (material == Material.ENDER_CHEST) {
+                // Replace ender chest with regular chest
+                block.setType(Material.CHEST);
+                standaloneChestLoc = loc;
             }
 
             // Track shelf blocks for registration in pass 2
@@ -170,10 +183,10 @@ public class TestWarehouseBuilder {
         // Fill network chests with random items (~30% capacity, 2x shelf count item types)
         int itemsAdded = fillChestsRandom(networkChests, shelvesRegistered);
 
-        // Fill standalone chest with shulker boxes
+        // Fill the shulker chest (ender chest replaced with regular chest) with shulker boxes
         int shulkersAdded = 0;
         if (standaloneChestLoc != null) {
-            shulkersAdded = fillChestWithShulkers(standaloneChestLoc, 10);
+            shulkersAdded = fillChestWithShulkers(standaloneChestLoc, 27);
         }
 
         // Get network count for this world
@@ -185,7 +198,7 @@ public class TestWarehouseBuilder {
         player.sendMessage("§7- §f" + networkCount + "§7 network(s) created");
         player.sendMessage("§7- §f" + networkChests.size() + "§7 chests with §f" + formatNumber(itemsAdded) + "§7 random items");
         if (shulkersAdded > 0) {
-            player.sendMessage("§7- §f" + shulkersAdded + "§7 filled shulker boxes in standalone chest");
+            player.sendMessage("§7- §f" + shulkersAdded + "§7 filled shulker boxes in shulker chest");
         }
 
         return true;
@@ -309,34 +322,79 @@ public class TestWarehouseBuilder {
     }
 
     /**
-     * Load template from export.json file.
+     * Load template from templates/{name}.json file.
      */
-    private List<ExportedBlock> loadTemplate() {
-        File exportFile = new File(plugin.getDataFolder(), "export.json");
+    private List<ExportedBlock> loadTemplate(String templateName) {
+        File templatesDir = new File(plugin.getDataFolder(), "templates");
+        File templateFile = new File(templatesDir, templateName + ".json");
         Gson gson = new Gson();
         Type listType = new TypeToken<List<ExportedBlock>>(){}.getType();
 
-        // Try plugin data folder first
-        if (exportFile.exists()) {
-            try (FileReader reader = new FileReader(exportFile)) {
+        // Try templates folder first
+        if (templateFile.exists()) {
+            try (FileReader reader = new FileReader(templateFile)) {
                 return gson.fromJson(reader, listType);
             } catch (IOException e) {
-                plugin.getLogger().warning("Failed to read export.json: " + e.getMessage());
+                plugin.getLogger().warning("Failed to read template " + templateName + ": " + e.getMessage());
+            }
+        }
+
+        // Try legacy export.json location for backwards compatibility (only for "default")
+        if (templateName.equals(DEFAULT_TEMPLATE)) {
+            File legacyFile = new File(plugin.getDataFolder(), "export.json");
+            if (legacyFile.exists()) {
+                try (FileReader reader = new FileReader(legacyFile)) {
+                    return gson.fromJson(reader, listType);
+                } catch (IOException e) {
+                    plugin.getLogger().warning("Failed to read legacy export.json: " + e.getMessage());
+                }
             }
         }
 
         // Try bundled resource as fallback
-        try (InputStream is = plugin.getResource("export.json")) {
+        String resourcePath = "templates/" + templateName + ".json";
+        try (InputStream is = plugin.getResource(resourcePath)) {
             if (is != null) {
                 try (InputStreamReader reader = new InputStreamReader(is)) {
                     return gson.fromJson(reader, listType);
                 }
             }
         } catch (IOException e) {
-            plugin.getLogger().warning("Failed to read bundled export.json: " + e.getMessage());
+            plugin.getLogger().warning("Failed to read bundled template " + templateName + ": " + e.getMessage());
         }
 
         return null;
+    }
+
+    /**
+     * List all available template names.
+     */
+    public List<String> listTemplates() {
+        List<String> templates = new ArrayList<>();
+
+        // Check templates folder
+        File templatesDir = new File(plugin.getDataFolder(), "templates");
+        if (templatesDir.exists() && templatesDir.isDirectory()) {
+            File[] files = templatesDir.listFiles((dir, name) -> name.endsWith(".json"));
+            if (files != null) {
+                for (File file : files) {
+                    String name = file.getName();
+                    templates.add(name.substring(0, name.length() - 5)); // Remove .json
+                }
+            }
+        }
+
+        // Check legacy export.json
+        File legacyFile = new File(plugin.getDataFolder(), "export.json");
+        if (legacyFile.exists() && !templates.contains(DEFAULT_TEMPLATE)) {
+            templates.add(DEFAULT_TEMPLATE);
+        }
+
+        if (templates.isEmpty()) {
+            templates.add("(none)");
+        }
+
+        return templates;
     }
 
     /**
@@ -349,10 +407,10 @@ public class TestWarehouseBuilder {
 
         int chestCount = chestLocations.size();
         int totalSlots = chestCount * 27;
-        int targetItems = (int) (totalSlots * 64 * 0.3); // 30% capacity
+        int targetItems = (int) (totalSlots * 64 * 0.4); // 40% capacity
 
-        // Pick 2x as many item types as shelves
-        int typeCount = shelfCount * 2;
+        // Pick 1.2x as many item types as shelves
+        int typeCount = (int) (shelfCount * 1.2);
         List<Material> itemTypes = getRandomItemTypes(typeCount);
 
         Random random = new Random();
@@ -400,7 +458,74 @@ public class TestWarehouseBuilder {
     }
 
     /**
-     * Fill a chest with shulker boxes, each fully filled with a single item type.
+     * Spawn filled shulker boxes as dropped items near a location (for ender chest).
+     */
+    private int spawnShulkerBoxes(Location location, int count) {
+        World world = location.getWorld();
+        if (world == null) return 0;
+
+        // Spawn location slightly above the ender chest
+        Location spawnLoc = location.clone().add(0.5, 1.5, 0.5);
+
+        // Get random item types for each shulker
+        List<Material> itemTypes = getRandomItemTypes(count);
+
+        // Array of shulker box colors
+        Material[] shulkerColors = {
+            Material.WHITE_SHULKER_BOX,
+            Material.ORANGE_SHULKER_BOX,
+            Material.MAGENTA_SHULKER_BOX,
+            Material.LIGHT_BLUE_SHULKER_BOX,
+            Material.YELLOW_SHULKER_BOX,
+            Material.LIME_SHULKER_BOX,
+            Material.PINK_SHULKER_BOX,
+            Material.GRAY_SHULKER_BOX,
+            Material.LIGHT_GRAY_SHULKER_BOX,
+            Material.CYAN_SHULKER_BOX,
+            Material.PURPLE_SHULKER_BOX,
+            Material.BLUE_SHULKER_BOX,
+            Material.BROWN_SHULKER_BOX,
+            Material.GREEN_SHULKER_BOX,
+            Material.RED_SHULKER_BOX,
+            Material.BLACK_SHULKER_BOX,
+            Material.SHULKER_BOX
+        };
+
+        Random random = new Random();
+        int shulkersAdded = 0;
+
+        for (int i = 0; i < count && i < itemTypes.size(); i++) {
+            Material shulkerMat = shulkerColors[random.nextInt(shulkerColors.length)];
+            ItemStack shulkerItem = new ItemStack(shulkerMat);
+
+            // Get the shulker's block state meta to add items inside
+            if (shulkerItem.getItemMeta() instanceof BlockStateMeta meta) {
+                if (meta.getBlockState() instanceof ShulkerBox shulker) {
+                    Inventory shulkerInv = shulker.getInventory();
+                    Material fillMat = itemTypes.get(i);
+                    int maxStack = fillMat.getMaxStackSize();
+
+                    // Fill 50-80% of the shulker
+                    int slotsToFill = 14 + random.nextInt(10);
+                    for (int slot = 0; slot < slotsToFill; slot++) {
+                        shulkerInv.setItem(slot, new ItemStack(fillMat, maxStack));
+                    }
+
+                    meta.setBlockState(shulker);
+                    shulkerItem.setItemMeta(meta);
+                }
+            }
+
+            // Drop the shulker as an item entity
+            world.dropItemNaturally(spawnLoc, shulkerItem);
+            shulkersAdded++;
+        }
+
+        return shulkersAdded;
+    }
+
+    /**
+     * Fill a regular chest with shulker boxes.
      */
     private int fillChestWithShulkers(Location chestLoc, int count) {
         Block block = chestLoc.getBlock();

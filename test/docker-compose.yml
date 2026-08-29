@@ -1,13 +1,15 @@
+name: hoardi-test
+
 services:
   minecraft:
-    image: itzg/minecraft-server:java21
+    image: itzg/minecraft-server:java25
     container_name: paper-test
     ports:
       - "25566:25565"
     environment:
       EULA: "TRUE"
       TYPE: PAPER
-      VERSION: "1.21.10"
+      VERSION: "26.2"
       MEMORY: "2G"
       LEVEL_TYPE: FLAT
       GENERATOR_SETTINGS: '{"layers":[{"block":"minecraft:bedrock","height":1},{"block":"minecraft:dirt","height":2},{"block":"minecraft:grass_block","height":1}],"biome":"minecraft:plains","structures":{"structures":{}}}'

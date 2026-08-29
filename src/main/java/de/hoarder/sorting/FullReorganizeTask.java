@@ -653,23 +653,23 @@ public class FullReorganizeTask extends BukkitRunnable {
      * Merge similar item stacks and sort by material name
      */
     private List<ItemStack> mergeAndSortStacks(List<ItemStack> items) {
-        Map<Material, Integer> totals = new HashMap<>();
-        Map<Material, ItemStack> samples = new HashMap<>();
-
+        // Merge by full item identity (type + components), NOT just Material.
+        // Keying by Material collapsed distinct items onto the first sample seen:
+        // two same-colored shulker boxes with different contents became two copies
+        // of the first one (duplicating one payload, erasing the other). The same
+        // applied to enchanted tools, potions, named items etc.
+        Map<ItemStack, Integer> totals = new LinkedHashMap<>();
         for (ItemStack item : items) {
-            totals.merge(item.getType(), item.getAmount(), Integer::sum);
-            if (!samples.containsKey(item.getType())) {
-                samples.put(item.getType(), item);
-            }
+            totals.merge(item.asOne(), item.getAmount(), Integer::sum);
         }
 
-        List<ItemStack> merged = new ArrayList<>();
-        List<Material> sortedMaterials = new ArrayList<>(totals.keySet());
-        sortedMaterials.sort(Comparator.comparing(Material::name));
+        List<Map.Entry<ItemStack, Integer>> entries = new ArrayList<>(totals.entrySet());
+        entries.sort(Comparator.comparing(e -> e.getKey().getType().name()));
 
-        for (Material material : sortedMaterials) {
-            int total = totals.get(material);
-            ItemStack sample = samples.get(material);
+        List<ItemStack> merged = new ArrayList<>();
+        for (Map.Entry<ItemStack, Integer> entry : entries) {
+            ItemStack sample = entry.getKey();
+            int total = entry.getValue();
             int maxStack = sample.getMaxStackSize();
 
             while (total > 0) {

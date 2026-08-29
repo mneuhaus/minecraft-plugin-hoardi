@@ -45,7 +45,7 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
     private final HoarderPlugin plugin;
 
     private static final List<String> SUBCOMMANDS = Arrays.asList(
-        "info", "networks", "setroot", "sort", "reload", "stats"
+        "info", "networks", "setroot", "sort", "reload", "stats", "templates", "test", "export", "fill"
     );
 
     public HoarderCommand(HoarderPlugin plugin) {
@@ -60,6 +60,9 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
 
         String subcommand = args[0].toLowerCase();
 
+        // Get optional template name for test/export commands
+        String templateName = args.length > 1 ? args[1] : "default";
+
         return switch (subcommand) {
             case "info" -> showInfo(sender);
             case "networks" -> showNetworks(sender);
@@ -67,9 +70,10 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
             case "sort" -> triggerSort(sender);
             case "reload" -> reload(sender);
             case "stats" -> showStats(sender);
-            case "test" -> buildTestWarehouse(sender);
-            case "export" -> exportNetwork(sender);
+            case "test" -> buildTestWarehouse(sender, templateName);
+            case "export" -> exportNetwork(sender, templateName);
             case "fill" -> fillNetworkRandom(sender);
+            case "templates" -> listTemplates(sender);
             default -> showHelp(sender);
         };
     }
@@ -89,7 +93,7 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§eCommands:");
         sender.sendMessage("§f/hoardi info §7- Show network information");
         sender.sendMessage("§f/hoardi networks §7- Show all networks summary");
-        sender.sendMessage("§f/hoardi setroot §7- Set network root (look at chest)");
+        sender.sendMessage("§f/hoardi setroot §7- Set network root (look at chest or shelf)");
         sender.sendMessage("§f/hoardi sort §7- Trigger full reorganization");
         sender.sendMessage("§f/hoardi stats §7- Show detailed statistics");
         sender.sendMessage("§f/hoardi reload §7- Reload configuration");
@@ -152,17 +156,37 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
         Block target = player.getTargetBlockExact(5);
 
         if (target == null) {
-            player.sendMessage("§cLook at a chest to set it as the network root.");
+            player.sendMessage("§cLook at a chest or shelf to set the network root.");
             return true;
         }
 
-        if (!plugin.getShelfManager().isChest(target)) {
-            player.sendMessage("§cYou must look at a chest to set it as root.");
+        Block chestBlock = null;
+
+        // If looking at a shelf, find the associated chest
+        if (plugin.getShelfManager().isShelf(target)) {
+            chestBlock = plugin.getShelfManager().findChestBehindShelf(target);
+            if (chestBlock == null) {
+                player.sendMessage("§cThis shelf is not connected to a chest.");
+                return true;
+            }
+        } else if (plugin.getShelfManager().isChest(target)) {
+            chestBlock = target;
+        } else {
+            player.sendMessage("§cYou must look at a chest or shelf to set root.");
             return true;
         }
 
-        Location rootLoc = target.getLocation();
-        plugin.getNetworkManager().setRoot(player.getWorld(), rootLoc);
+        Location rootLoc = chestBlock.getLocation();
+
+        // Find the network that contains this chest (not just nearby network)
+        ChestNetwork network = plugin.getNetworkManager().getNetworkForChest(rootLoc);
+        if (network == null) {
+            player.sendMessage("§cThis chest is not part of any network. Add a shelf first.");
+            return true;
+        }
+
+        network.setRoot(rootLoc);
+        plugin.getNetworkManager().save();
 
         player.sendMessage("§a[Hoarder] §7Network root set to " + formatLocation(rootLoc));
         player.sendMessage("§7All positions will be calculated relative to this chest.");
@@ -227,7 +251,7 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
     /**
      * Build a test warehouse (hidden command for development)
      */
-    private boolean buildTestWarehouse(CommandSender sender) {
+    private boolean buildTestWarehouse(CommandSender sender, String templateName) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage("§cThis command can only be used by players.");
             return true;
@@ -239,7 +263,24 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
         }
 
         TestWarehouseBuilder builder = new TestWarehouseBuilder(plugin);
-        builder.build(player);
+        builder.build(player, templateName);
+        return true;
+    }
+
+    /**
+     * List available templates
+     */
+    private boolean listTemplates(CommandSender sender) {
+        TestWarehouseBuilder builder = new TestWarehouseBuilder(plugin);
+        List<String> templates = builder.listTemplates();
+
+        sender.sendMessage("§6=== Available Templates ===");
+        for (String template : templates) {
+            sender.sendMessage("§7  - §f" + template);
+        }
+        sender.sendMessage("");
+        sender.sendMessage("§7Use: §f/hoardi test <name> §7or §f/hoardi export <name>");
+
         return true;
     }
 
@@ -322,6 +363,19 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
                 .filter(s -> s.startsWith(prefix))
                 .toList();
         }
+
+        // Tab complete template names for test/export commands
+        if (args.length == 2) {
+            String subcommand = args[0].toLowerCase();
+            if (subcommand.equals("test") || subcommand.equals("export")) {
+                String prefix = args[1].toLowerCase();
+                TestWarehouseBuilder builder = new TestWarehouseBuilder(plugin);
+                return builder.listTemplates().stream()
+                    .filter(s -> s.toLowerCase().startsWith(prefix))
+                    .toList();
+            }
+        }
+
         return new ArrayList<>();
     }
 
@@ -345,9 +399,9 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
     }
 
     /**
-     * Export network structure to console log (for creating test templates)
+     * Export network structure to a named template file
      */
-    private boolean exportNetwork(CommandSender sender) {
+    private boolean exportNetwork(CommandSender sender, String templateName) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage("§cThis command can only be used by players.");
             return true;
@@ -394,8 +448,8 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
             maxZ = Math.max(maxZ, loc.getBlockZ());
         }
 
-        // Add margin
-        int margin = 12;
+        // Add margin (generous to capture full builds)
+        int margin = 24;
         minX -= margin; maxX += margin;
         minY -= margin; maxY += margin;
         minZ -= margin; maxZ += margin;
@@ -445,14 +499,21 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
             }
         }
 
-        // Write to JSON file
-        File exportFile = new File(plugin.getDataFolder(), "export.json");
+        // Ensure templates directory exists
+        File templatesDir = new File(plugin.getDataFolder(), "templates");
+        if (!templatesDir.exists()) {
+            templatesDir.mkdirs();
+        }
+
+        // Write to JSON file in templates folder
+        File exportFile = new File(templatesDir, templateName + ".json");
         Gson gson = new GsonBuilder().setPrettyPrinting().create();
 
         try (FileWriter writer = new FileWriter(exportFile)) {
             gson.toJson(blocks, writer);
-            player.sendMessage("§a[Hoardi] §7Network exported to §fplugins/Hoardi/export.json");
+            player.sendMessage("§a[Hoardi] §7Network exported to §fplugins/Hoardi/templates/" + templateName + ".json");
             player.sendMessage("§7Exported §f" + blocks.size() + "§7 blocks (relative to your position)");
+            player.sendMessage("§7Load it with: §f/hoardi test " + templateName);
         } catch (IOException e) {
             player.sendMessage("§c[Hoardi] Failed to write export file: " + e.getMessage());
             plugin.getLogger().severe("Failed to export network: " + e.getMessage());

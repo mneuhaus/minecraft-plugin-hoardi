@@ -2,7 +2,7 @@
 
 **Intelligent auto-sorting chest network with shelf previews for Minecraft**
 
-Hoarder is a Paper plugin for Minecraft 1.21+ that transforms your storage into a smart, self-organizing system. Connect chests with decorative shelves, and items automatically sort themselves into logical categories.
+Hoarder is a Paper plugin for Minecraft 26.1.2+ that transforms your storage into a smart, self-organizing system. Connect chests with decorative shelves, and items automatically sort themselves into logical categories.
 
 ## Features
 
@@ -18,12 +18,12 @@ Hoarder is a Paper plugin for Minecraft 1.21+ that transforms your storage into 
 
 ## Requirements
 
-- Paper 1.21.10+ (uses the new Shelf block type)
-- Java 21+
+- Paper 26.1.2+ (uses the new Shelf block type)
+- Java 25+
 
 ## Installation
 
-1. Download `Hoardi-1.0.0.jar` from releases
+1. Download `Hoardi-1.0.2.jar` from releases
 2. Place in your server's `plugins/` folder
 3. Restart the server
 4. Done!
@@ -259,8 +259,8 @@ Items not in any category go to `misc`.
 git clone https://github.com/mneuhaus/hoarder.git
 cd hoarder
 
-# Build with Maven (requires Java 21 - use Docker if needed)
-docker run --rm -v "$(pwd)":/app -w /app maven:3.9-eclipse-temurin-21 mvn clean package
+# Build with Maven (requires Java 25 - use Docker if needed)
+docker run --rm -v "$(pwd)":/app -w /app maven:3.9-eclipse-temurin-25 mvn clean package
 
 # Or with make commands
 make build
@@ -295,7 +295,7 @@ Created by Marc Neuhaus
 
 ## Supported Shelf Types
 
-All Minecraft 1.21+ shelf variants are supported:
+All Minecraft 26.1.2+ shelf variants are supported:
 - Oak Shelf
 - Spruce Shelf
 - Birch Shelf

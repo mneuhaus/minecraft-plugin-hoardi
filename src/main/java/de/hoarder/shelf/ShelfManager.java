@@ -186,7 +186,14 @@ public class ShelfManager {
         return material == Material.CHEST
             || material == Material.TRAPPED_CHEST
             || material == Material.BARREL
-            || material == Material.COPPER_CHEST;
+            || material == Material.COPPER_CHEST
+            || material == Material.EXPOSED_COPPER_CHEST
+            || material == Material.WEATHERED_COPPER_CHEST
+            || material == Material.OXIDIZED_COPPER_CHEST
+            || material == Material.WAXED_COPPER_CHEST
+            || material == Material.WAXED_EXPOSED_COPPER_CHEST
+            || material == Material.WAXED_WEATHERED_COPPER_CHEST
+            || material == Material.WAXED_OXIDIZED_COPPER_CHEST;
     }
 
     /**
@@ -281,7 +288,8 @@ public class ShelfManager {
     }
 
     /**
-     * Find an adjacent chest to a shelf (the chest behind the shelf based on facing)
+     * Find an adjacent chest to a shelf (the chest behind the shelf based on facing,
+     * or below for upright shelves on top of barrels/chests)
      */
     public Block findChestBehindShelf(Block shelf) {
         if (shelf.getBlockData() instanceof Directional directional) {
@@ -293,6 +301,13 @@ public class ShelfManager {
                 return behindBlock;
             }
         }
+
+        // Also check below for upright shelves placed on top of barrels/chests
+        Block belowBlock = shelf.getRelative(BlockFace.DOWN);
+        if (isChest(belowBlock)) {
+            return belowBlock;
+        }
+
         return null;
     }
 
