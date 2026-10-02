@@ -111,8 +111,12 @@ public class ShelfDisplayTask extends BukkitRunnable {
             }
         }
 
-        // Clean up invalid shelves
+        // Clean up invalid shelves; take the decorative items off first, they are not real
         for (Location loc : toRemove) {
+            if (loc.getWorld() != null && loc.getBlock().getState() instanceof org.bukkit.block.Shelf shelf) {
+                shelf.getSnapshotInventory().clear();
+                shelf.update(true, false);
+            }
             shelfManager.unregisterShelf(loc);
         }
     }

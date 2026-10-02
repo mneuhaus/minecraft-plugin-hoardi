@@ -188,7 +188,7 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
         network.setRoot(rootLoc);
         plugin.getNetworkManager().save();
 
-        player.sendMessage("§a[Hoarder] §7Network root set to " + formatLocation(rootLoc));
+        player.sendMessage("§a[Hoardi] §7Network root set to " + formatLocation(rootLoc));
         player.sendMessage("§7All positions will be calculated relative to this chest.");
 
         return true;
@@ -199,7 +199,14 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
      */
     private boolean triggerSort(CommandSender sender) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage("§cThis command can only be used by players.");
+            // Console: reorganize every network (useful for admins and testing)
+            int count = 0;
+            for (ChestNetwork network : plugin.getNetworkManager().getAllNetworks()) {
+                if (network.isEmpty()) continue;
+                FullReorganizeTask.trigger(plugin, network);
+                count++;
+            }
+            sender.sendMessage("Triggered full sort for " + count + " network(s).");
             return true;
         }
 
@@ -225,12 +232,12 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
         }
 
         final ChestNetwork targetNetwork = network;
-        player.sendMessage("§e[Hoarder] §7Starting full reorganization of network at " + formatLocation(network.getRoot()) + "...");
+        player.sendMessage("§e[Hoardi] §7Starting full reorganization of network at " + formatLocation(network.getRoot()) + "...");
 
         // Run on main thread for inventory access
         plugin.getServer().getScheduler().runTask(plugin, () -> {
             FullReorganizeTask.trigger(plugin, targetNetwork);
-            player.sendMessage("§a[Hoarder] §7Reorganization complete!");
+            player.sendMessage("§a[Hoardi] §7Reorganization complete!");
         });
 
         return true;
@@ -294,7 +301,7 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
         }
 
         plugin.reload();
-        sender.sendMessage("§a[Hoarder] §7Configuration reloaded!");
+        sender.sendMessage("§a[Hoardi] §7Configuration reloaded!");
 
         return true;
     }
@@ -304,7 +311,14 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
      */
     private boolean showStats(CommandSender sender) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage("§cThis command can only be used by players.");
+            // Console: short summary over all networks
+            for (ChestNetwork network : plugin.getNetworkManager().getAllNetworks()) {
+                if (network.isEmpty()) continue;
+                sender.sendMessage(network.getWorld().getName() + " "
+                    + formatLocation(network.getRoot()) + ": "
+                    + network.size() + " chests (" + network.getShelfMaterial().name() + ")"
+                    + (network.isDirty() ? " [pending sort]" : ""));
+            }
             return true;
         }
 

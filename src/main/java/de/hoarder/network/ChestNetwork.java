@@ -23,6 +23,13 @@ public class ChestNetwork {
     // Category assignments (category -> list of chest locations)
     private final Map<String, List<Location>> categoryAssignments = new HashMap<>();
 
+    // Dirty flag: set when chest contents may have changed since the last full
+    // reorganize. Starts true so the first run after startup always sorts.
+    private volatile boolean dirty = true;
+
+    // Throttle for "network is overfull" player notifications (epoch millis)
+    private long lastOverflowWarn = 0L;
+
     public ChestNetwork(World world, Location root, Material shelfMaterial, HoarderConfig config) {
         this.world = world;
         this.root = root;
@@ -57,6 +64,33 @@ public class ChestNetwork {
      */
     public Location getRoot() {
         return root;
+    }
+
+    /** Mark this network as changed so the next reorganize cycle picks it up. */
+    public void markDirty() {
+        this.dirty = true;
+    }
+
+    /** Called after a successful full reorganize. */
+    public void clearDirty() {
+        this.dirty = false;
+    }
+
+    public boolean isDirty() {
+        return dirty;
+    }
+
+    /**
+     * Returns true (and arms the throttle) if an overfull warning may be sent
+     * to players now; false while the cooldown is still running.
+     */
+    public boolean tryArmOverflowWarn(long cooldownMillis) {
+        long now = System.currentTimeMillis();
+        if (now - lastOverflowWarn < cooldownMillis) {
+            return false;
+        }
+        lastOverflowWarn = now;
+        return true;
     }
 
     /**

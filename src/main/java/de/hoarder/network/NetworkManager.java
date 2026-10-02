@@ -373,6 +373,7 @@ public class NetworkManager {
         // Add chest to network
         if (!network.containsChest(chestLoc)) {
             network.addChest(chestLoc);
+            network.markDirty();
             save();
 
             if (config.isDebug()) {
@@ -389,6 +390,7 @@ public class NetworkManager {
         ChestNetwork network = getNetworkForChest(chestLoc);
         if (network != null) {
             network.removeChest(chestLoc);
+            network.markDirty();
 
             // Remove empty networks
             if (network.isEmpty()) {
@@ -504,7 +506,7 @@ public class NetworkManager {
             plugin.getLogger().info("[DEBUG] FullReorganizeTask completed");
         }
 
-        player.sendMessage("§a[Hoarder] §7Items sorted!");
+        player.sendMessage("§a[Hoardi] §7Items sorted!");
     }
 
     /**

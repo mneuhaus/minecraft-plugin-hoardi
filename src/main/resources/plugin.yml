@@ -1,5 +1,5 @@
 name: Hoardi
-version: 1.0.3
+version: 1.0.4
 main: de.hoarder.HoarderPlugin
 api-version: '26.1.2'
 description: Intelligent auto-sorting chest network with shelf previews

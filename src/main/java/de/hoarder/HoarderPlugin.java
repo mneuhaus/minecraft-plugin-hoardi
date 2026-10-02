@@ -47,6 +47,10 @@ public class HoarderPlugin extends JavaPlugin {
         networkManager = new NetworkManager(this, shelfManager, hoarderConfig);
         networkManager.load();
 
+        // Restore items from reorganize journals left behind by a crash
+        // (must run after networks are loaded, before the first reorganize).
+        de.hoarder.sorting.ReorganizeJournal.restoreAll(this);
+
         // Register event listeners
         getServer().getPluginManager().registerEvents(
             new ShelfListener(this, shelfManager, networkManager),
@@ -71,7 +75,7 @@ public class HoarderPlugin extends JavaPlugin {
             );
         }
 
-        getLogger().info("Hoarder enabled!");
+        getLogger().info("Hoardi enabled!");
         getLogger().info("Sneak + place a shelf against a chest to add it to the network!");
         getLogger().info("Use different shelf materials (Oak, Birch, etc.) for separate networks!");
     }
@@ -94,7 +98,7 @@ public class HoarderPlugin extends JavaPlugin {
             networkManager.save();
         }
 
-        getLogger().info("Hoarder disabled!");
+        getLogger().info("Hoardi disabled!");
     }
 
     /**
@@ -104,7 +108,7 @@ public class HoarderPlugin extends JavaPlugin {
         hoarderConfig.load();
         shelfManager.load();
         networkManager.load();
-        getLogger().info("Hoarder reloaded!");
+        getLogger().info("Hoardi reloaded!");
     }
 
     // Getters

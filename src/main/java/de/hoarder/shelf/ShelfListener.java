@@ -18,7 +18,9 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.block.Shelf;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
@@ -80,7 +82,7 @@ public class ShelfListener implements Listener {
                 List<Location> nearby = networkManager.findNearbyShelvesSameMaterial(
                     placed.getLocation(), shelfMaterial);
 
-                player.sendMessage("§a[Hoarder] §7" + materialName + " shelf registered!");
+                player.sendMessage("§a[Hoardi] §7" + materialName + " shelf registered!");
 
                 if (nearby.isEmpty()) {
                     player.sendMessage("§7This is the start of a new §e" + materialName + "§7 network.");
@@ -91,7 +93,28 @@ public class ShelfListener implements Listener {
 
                 player.sendMessage("§7Click the shelf to open the chest. Use different shelf types for separate networks!");
             } else {
-                player.sendMessage("§e[Hoarder] §7Tip: Sneak + place a shelf to add this chest to your storage network!");
+                player.sendMessage("§e[Hoardi] §7Tip: Sneak + place a shelf to add this chest to your storage network!");
+            }
+        }
+    }
+
+    /** Creepers and TNT destroy blocks without a BlockBreakEvent: clear the displays first, or they drop as real items. */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onEntityExplode(EntityExplodeEvent event) {
+        clearShelfDisplays(event.blockList());
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onBlockExplode(BlockExplodeEvent event) {
+        clearShelfDisplays(event.blockList());
+    }
+
+    private void clearShelfDisplays(java.util.List<Block> blocks) {
+        for (Block block : blocks) {
+            if (shelfManager.isShelf(block) && shelfManager.isTracked(block.getLocation())
+                && block.getState() instanceof Shelf shelf) {
+                shelf.getSnapshotInventory().clear();
+                shelf.update(true, false);
             }
         }
     }
@@ -135,7 +158,7 @@ public class ShelfListener implements Listener {
             }
 
             String materialName = material != null ? formatMaterialName(material) : "Preview";
-            event.getPlayer().sendMessage("§e[Hoarder] §7" + materialName + " shelf removed from network.");
+            event.getPlayer().sendMessage("§e[Hoardi] §7" + materialName + " shelf removed from network.");
             return;
         }
 
@@ -291,10 +314,13 @@ public class ShelfListener implements Listener {
             }
         }
 
-        // Clear the shulker's contents
+        // Clear the shulker's contents and put the emptied box back into the hand:
+        // the held item may be a copy, and a box that keeps its contents after
+        // unloading would be an item duplicator.
         shulkerInv.clear();
         meta.setBlockState(shulkerBox);
         shulkerItem.setItemMeta(meta);
+        player.getInventory().setItemInMainHand(shulkerItem);
 
         // Report results
         if (overflow.isEmpty()) {
@@ -389,9 +415,46 @@ public class ShelfListener implements Listener {
             return;
         }
 
+        // A player looked inside: contents may have changed -> next full
+        // reorganize cycle must pick this network up again.
+        markNetworkDirty(chestLoc);
+
         // Trigger sort if enabled
         if (plugin.getHoarderConfig().isQuickSortOnClose()) {
             networkManager.scheduleQuickSort(chestLoc, player);
+        }
+    }
+
+    /**
+     * Hoppers (and droppers etc.) feed network chests without any player
+     * interaction - mark the network dirty so those changes get sorted too.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onInventoryMoveItem(org.bukkit.event.inventory.InventoryMoveItemEvent event) {
+        InventoryHolder holder = event.getDestination().getHolder();
+        if (holder instanceof Chest chest) {
+            Location loc = chest.getLocation();
+            if (shelfManager.hasShelf(loc)) {
+                markNetworkDirty(loc);
+            }
+        } else if (holder instanceof DoubleChest doubleChest) {
+            // The shelf can hang on either half.
+            for (InventoryHolder side : new InventoryHolder[]{doubleChest.getLeftSide(), doubleChest.getRightSide()}) {
+                if (side instanceof Chest sideChest) {
+                    Location loc = sideChest.getLocation();
+                    if (shelfManager.hasShelf(loc)) {
+                        markNetworkDirty(loc);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    private void markNetworkDirty(Location chestLoc) {
+        de.hoarder.network.ChestNetwork network = networkManager.getNetworkForChest(chestLoc);
+        if (network != null) {
+            network.markDirty();
         }
     }
 

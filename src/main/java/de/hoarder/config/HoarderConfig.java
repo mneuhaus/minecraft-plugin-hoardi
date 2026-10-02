@@ -152,6 +152,47 @@ public class HoarderConfig {
             }
         }
 
+        // A config from an older version knows nothing about items added since;
+        // whatever the bundled defaults categorize and the server's file does not
+        // is taken from the defaults, so nothing new silently lands in misc.
+        int inherited = 0;
+        try (java.io.InputStream in = plugin.getResource("config.yml")) {
+            if (in != null) {
+                FileConfiguration defaults = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(
+                    new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8));
+                ConfigurationSection defaultPaths = defaults.getConfigurationSection("paths");
+                if (defaultPaths != null) {
+                    for (String path : defaultPaths.getKeys(false)) {
+                        for (String materialName : defaultPaths.getStringList(path)) {
+                            Material material;
+                            try {
+                                material = Material.valueOf(materialName.toUpperCase());
+                            } catch (IllegalArgumentException e) {
+                                continue;
+                            }
+                            if (materialToCategory.containsKey(material)) {
+                                continue;
+                            }
+                            materialToCategory.put(material, path);
+                            inherited++;
+                            String[] parts = path.split("/");
+                            StringBuilder currentPath = new StringBuilder();
+                            for (int i = 0; i < parts.length; i++) {
+                                if (i > 0) currentPath.append("/");
+                                currentPath.append(parts[i]);
+                                categories.add(currentPath.toString());
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (java.io.IOException e) {
+            plugin.getLogger().warning("Could not read the bundled config defaults: " + e.getMessage());
+        }
+        if (inherited > 0) {
+            plugin.getLogger().info(inherited + " items are not in this server's config.yml yet and use the bundled default categories.");
+        }
+
         // Sort categories by config order, subcategories alphabetically within their parent
         sortedCategories.addAll(categories);
         sortedCategories.sort((a, b) -> {

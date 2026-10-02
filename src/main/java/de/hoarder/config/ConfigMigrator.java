@@ -22,8 +22,10 @@ public class ConfigMigrator {
     private final HoarderPlugin plugin;
     private final Logger logger;
 
-    // Old plugin names to check for migration
-    private static final String[] OLD_PLUGIN_NAMES = {"Hoardi", "ChestPreview"};
+    // Old plugin names to check for migration. "Hoarder" was the pre-release
+    // name used on early server installs (its absence here bit us in 1.0.3:
+    // the server update needed a manual folder copy).
+    private static final String[] OLD_PLUGIN_NAMES = {"Hoarder", "Hoardi", "ChestPreview"};
 
     public ConfigMigrator(HoarderPlugin plugin) {
         this.plugin = plugin;
