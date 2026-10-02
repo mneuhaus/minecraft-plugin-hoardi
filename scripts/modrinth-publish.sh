@@ -23,6 +23,8 @@ USER_AGENT="Hoardi-Publisher/1.0 (github.com/mneuhaus/hoarder)"
 
 # Project metadata
 PROJECT_SLUG="hoardi"
+# Every version the jar is smoke-tested on (tools/compat/smoke.sh); override with GAME_VERSIONS='[...]'
+DEFAULT_GAME_VERSIONS='["1.21.9", "1.21.10", "1.21.11", "26.1", "26.1.1", "26.1.2", "26.2", "26.3"]'
 PROJECT_NAME="Hoardi"
 PROJECT_SUMMARY="Intelligent auto-sorting chest network with shelf item displays"
 PROJECT_DESCRIPTION="# Hoardi
@@ -53,8 +55,8 @@ Hoardi creates intelligent chest networks that automatically sort items by confi
 
 ## Requirements
 
-- Paper 26.1.2+ (requires shelf blocks)
-- Java 25+"
+- Paper, Purpur or Spigot 1.21.9+ incl. 26.x (shelf blocks arrived in 1.21.9)
+- Java 21+"
 
 # Colors/formatting
 RED='\033[0;31m'
@@ -176,7 +178,7 @@ upload_version() {
     "version_number": "$version",
     "changelog": $(echo "$changelog" | jq -Rs .),
     "dependencies": [],
-    "game_versions": ["26.1.2", "26.2"],
+    "game_versions": ${GAME_VERSIONS:-$DEFAULT_GAME_VERSIONS},
     "version_type": "release",
     "loaders": ["paper", "purpur", "spigot", "bukkit"],
     "featured": true,
