@@ -1,317 +1,236 @@
-# Hoarder
+<p align="center">
+  <img src="assets/icon-modrinth.png" alt="Hoardi icon" width="128">
+</p>
 
-**Intelligent auto-sorting chest network with shelf previews for Minecraft**
+<h1 align="center">Hoardi</h1>
 
-Hoarder is a Paper plugin for Minecraft 26.1.2+ that transforms your storage into a smart, self-organizing system. Connect chests with decorative shelves, and items automatically sort themselves into logical categories.
+<p align="center">
+  <b>Auto-sorting chest networks with shelf previews for Paper and Spigot 1.21.9 – 26.3</b>
+</p>
+
+<p align="center">
+  <a href="https://modrinth.com/plugin/hoardi"><img src="https://img.shields.io/modrinth/dt/hoardi?logo=modrinth&label=Modrinth&color=00AF5C" alt="Modrinth downloads"></a>
+  <a href="https://modrinth.com/plugin/hoardi/versions"><img src="https://img.shields.io/modrinth/v/hoardi?label=version" alt="Latest version"></a>
+  <a href="https://hangar.papermc.io/mneuhaus/Hoardi"><img src="https://img.shields.io/badge/Hangar-Hoardi-1F6FEB" alt="Hangar"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+</p>
+
+![A Hoardi storage hall: chests with shelves in front that show what each chest holds](docs/media/storage-hall.jpg)
+
+Dump your loot into any chest and Hoardi sorts it across your whole chest network. A shelf in front of each chest shows what's inside, so a storage room reads at a glance. Add chests whenever you like: Hoardi bundles related items, gives a category its own chest once there is enough of it, and re-sorts everything as the storage grows.
+
+Works with vanilla clients, no mod needed.
+
+**Download:** [Modrinth](https://modrinth.com/plugin/hoardi) · [Hangar](https://hangar.papermc.io/mneuhaus/Hoardi)
+
+## See it in action
+
+![Dump your loot into one chest, Hoardi sorts it into the network](docs/media/dump-and-sort.gif)
 
 ## Features
 
-- **Auto-Sorting**: Items automatically move to appropriate chests based on their category
-- **Shelf Previews**: Shelves display the top items in each chest at a glance
-- **Material-Based Networks**: Use different shelf types (Oak, Birch, etc.) to create separate storage networks
-- **Smart Categories**: 300+ items organized into intuitive hierarchical categories
-- **Floor Detection**: Multi-level storage systems supported with intelligent pathfinding
-- **No Item Loss**: Overflow protection ensures items are never lost during sorting
-- **Zero Configuration**: Works out of the box - just place shelves against chests
-- **Config Migration**: Automatically migrates data from older plugin versions
-- **Shulker Unloading**: Right-click a shelf with a shulker box to dump its contents into the network
+- **Auto-sorting network**: close any chest in the network and its items move to the chest of their category
+- **Shelf previews**: shelves show the top items of the chest behind them, and how full it is
+- **One network per wood type**: oak shelves form one network, birch shelves another, even right next to each other
+- **Grows with you**: categories merge while space is tight and split into their own chests once they are big enough
+- **1,600+ items in 165 categories** out of the box, fully configurable
+- **Shulker unloading**: right-click a shelf with a filled shulker box to empty it into the network
+- **Click a shelf to open its chest**
+- **Any layout**: single chests, double chests (also side-on and stacked), barrels, copper chests, several floors
+- **Nothing gets lost**: when space runs short, items go into any free slot and players nearby get a warning, and a journal restores every item if the server crashes mid-sort
+
+## Setting it up
+
+![Place chests, sneak-place a shelf on each, one network per wood type](docs/media/setup.webp)
+
+1. Put down your chests in any layout: single chests, double chests, barrels
+2. **Sneak and place a shelf** against each chest, or on top of it
+3. Done: every shelf shows what its chest holds. Shelves of the same wood near each other form one network, a different wood starts a separate one
+
+The first chest of a network is its **root**. Sorting starts there: early-game categories (wood, terrain, stone) land closest to the root, late-game ones further away. Use `/hoardi setroot` to move it.
 
 ## Requirements
 
-- Paper 26.1.2+ (uses the new Shelf block type)
-- Java 25+
+- Paper or Spigot **1.21.9 or newer**, including 26.x (shelf blocks arrived in 1.21.9). Purpur and other Paper forks should work too.
+- Java 21 or newer
+
+One jar covers all versions. Tested so far:
+
+| Server | Versions | How |
+|--------|----------|-----|
+| Paper | 1.21.9, 1.21.10, 1.21.11, 26.1.2, 26.2, 26.3 | Full smoke test: 66-chest network, sorting, shelf previews, barrels, separate wood networks |
+| Spigot | 1.21.11 | Loads, commands run without errors |
+
+New wood types work without an update: Hoardi picks up every shelf the server knows, so the Poplar shelf from 26.3 already forms its own network.
 
 ## Installation
 
-1. Download `Hoardi-1.0.2.jar` from releases
-2. Place in your server's `plugins/` folder
+1. Download the jar from [Modrinth](https://modrinth.com/plugin/hoardi) or [Hangar](https://hangar.papermc.io/mneuhaus/Hoardi)
+2. Put it into your server's `plugins/` folder
 3. Restart the server
-4. Done!
-
-## Quick Start
-
-1. **Place chests** where you want your storage
-2. **Sneak + place a shelf** against the front of each chest
-3. **That's it!** Items will auto-sort when you close any chest in the network
-
-### Multiple Networks
-
-Use different shelf materials to create **separate storage networks**:
-- **Oak shelves** → Main storage network
-- **Birch shelves** → Secondary storage (e.g., building materials)
-- **Dark Oak shelves** → Another network (e.g., valuables)
-
-Shelves within 50 blocks of each other (configurable) with the **same material** form one network. Different materials = different networks, even if they're next to each other!
 
 ## Commands
 
 | Command | Description | Permission |
 |---------|-------------|------------|
 | `/hoardi` | Show help | - |
-| `/hoardi info` | Display network information | - |
-| `/hoardi networks` | Show all networks summary | - |
-| `/hoardi setroot` | Set the network root (look at a chest) | `hoarder.admin` |
-| `/hoardi sort` | Trigger full reorganization | `hoarder.admin` |
-| `/hoardi stats` | Show detailed statistics | - |
-| `/hoardi reload` | Reload configuration | `hoarder.admin` |
+| `/hoardi info` | Show the networks in your world | - |
+| `/hoardi networks` | Short summary of all networks | - |
+| `/hoardi stats` | Fill level, categories and which chest holds what | - |
+| `/hoardi setroot` | Make the chest you look at the network root | `hoarder.admin` |
+| `/hoardi sort` | Reorganize the network now | `hoarder.admin` |
+| `/hoardi reload` | Reload the configuration | `hoarder.admin` |
 
-**Alias**: `/hr`
+Alias: `/hr`. Run from the console, `/hoardi sort` reorganizes every network.
 
 ## Permissions
 
 | Permission | Description | Default |
 |------------|-------------|---------|
-| `hoarder.use` | Create shelves and use the network | Everyone |
-| `hoarder.admin` | Admin commands (setroot, sort, reload) | OP |
+| `hoarder.use` | Register shelves and use the network | everyone |
+| `hoarder.admin` | `setroot`, `sort`, `reload` | op |
 
-## How It Works
+The permission nodes still carry the plugin's old name, `hoarder`.
 
-### Shelf Registration
-When you sneak + place a shelf against a chest, the chest joins your storage network. The shelf will display the top 3 items in the chest, giving you a visual preview of contents.
+## How it works
 
-The **shelf material type** (Oak, Birch, Spruce, etc.) determines which network the chest belongs to. This allows you to have multiple independent sorting networks in the same area.
+### Networks
 
-### Shelf Fill Level Display
+Sneak-placing a shelf against a chest (or on top of it) registers the chest. Shelves of the **same wood** within `network_radius` (default 32 blocks) join the same network. A different wood always starts a separate network, so you can keep, say, building blocks and loot apart in the same room.
 
-Shelves visually indicate how full a chest is using a clever item display system:
+Placing a shelf without sneaking stays a plain vanilla shelf.
 
-| Chest Contents | Display Pattern | Meaning |
-|----------------|-----------------|---------|
-| 1 item type, < 50% full | `[ ] [X] [ ]` | Single item centered |
-| 1 item type, 50-80% full | `[X] [X] [ ]` | Two items shown |
-| 1 item type, > 80% full | `[X] [X] [X]` | Three items = nearly full! |
-| 2 item types | `[A] [B] [ ]` or `[A] [A] [B]` | Top 2 items shown |
-| 3+ item types | `[A] [B] [C]` | Top 3 most common items |
+### Shelf previews
 
-This lets you see at a glance:
-- **What's inside** - the actual item types
-- **How full it is** - more repeated items = fuller chest
-- **When to expand** - three identical items means time for more storage!
+A shelf shows the most common items of its chest. With a single item type, the number of copies tells you how full the chest is:
 
-### Sorting Algorithm
-1. **Collect**: All items from all chests are gathered
-2. **Categorize**: Each item is assigned to a category (e.g., `wood/oak`, `ores/iron`, `food/meat`)
-3. **Distribute**: Items are placed into chests, one category per chest when possible
-4. **Overflow Protection**: If space is tight, categories are merged; items are never lost
+| Chest contents | Shelf shows |
+|----------------|-------------|
+| 1 item type, under 50 % full | `[ ] [X] [ ]` |
+| 1 item type, 50 – 80 % full | `[X] [X] [ ]` |
+| 1 item type, over 80 % full | `[X] [X] [X]` |
+| several item types | the top 2 or 3 types |
 
-### Category Splitting System
+A double chest with two shelves uses all six slots. Variants of the same block (for example shelves in different woods) count as one type, so the preview shows different kinds of items instead of six colours of the same thing. Preview items are only for show: you can't take them out, and breaking the shelf or an explosion doesn't drop them.
 
-Hoardi intelligently decides how to distribute categories across your chests:
+### Sorting
 
-**Default behavior**: Each leaf category (e.g., `wood/oak`, `wood/birch`) gets its own chest.
+1. **Collect**: all items of the network are gathered
+2. **Categorize**: each item gets its category, for example `wood/oak`, `ores/iron` or `food/meat`
+3. **Distribute**: categories fill the chests in `category_order`, starting at the root, floor by floor and bottom to top within a stack
 
-**When you have fewer chests than categories**, Hoardi merges related categories:
-1. Large categories (> 50% of a chest) always get their own chest
-2. Small categories are grouped with siblings (same parent category)
-3. If still not enough space, categories are merged by root (e.g., all `wood/*` together)
+Sorting runs when someone closes a network chest (after a short delay), every 10 minutes, and on `/hoardi sort`.
 
-**Example with 10 chests and 25 categories:**
+**Splitting:** each leaf category such as `wood/oak` gets its own chest when there is room. With fewer chests than categories, Hoardi merges:
+
+1. A category filling more than `split_threshold` (default 50 %) of a chest keeps its own chest
+2. Small categories share a chest with their siblings (`wood/birch` + `wood/spruce` → `wood`)
+3. If space is still short, everything under one root category shares
+
 ```
-wood/oak (large)     → Own chest
-wood/sticks (large)  → Own chest
-wood/birch (small)   → Merged into "wood" chest
-wood/spruce (small)  → Merged into "wood" chest
-ores/iron (medium)   → Own chest
-ores/gold (small)    → Merged into "ores" chest
-...
+wood/oak (large)     → own chest
+wood/sticks (large)  → own chest
+wood/birch (small)   → shared "wood" chest
+wood/spruce (small)  → shared "wood" chest
+ores/iron (medium)   → own chest
+ores/gold (small)    → shared "ores" chest
 ```
 
-The `split-threshold` setting (default: 50%) controls when a category is considered "large enough" to deserve its own chest.
+Before a reorganize empties any chest, Hoardi writes the network's contents to a journal. If the server dies mid-sort, the items are restored on the next start.
 
-### Shulker Box Unloading
+### Shulker unloading
 
-Quickly unload shulker boxes into your storage network:
+1. Hold a filled shulker box
+2. Right-click any shelf of the network
+3. The items go to their chests, the shulker box is emptied and the network sorts
 
-1. **Hold a filled shulker box** in your hand
-2. **Right-click any shelf** in your network
-3. Items are distributed to appropriate chests and the shulker is emptied
-
-**Behavior:**
-- Filled shulker → Items distributed to network, shulker emptied
-- Empty shulker → Opens the chest behind the shelf (same as empty hand)
-- Overflow items return to your inventory (or drop if inventory is full)
-- Triggers automatic sorting after unloading
-
-This is perfect for quickly dumping loot from mining trips or adventures!
-
-### Position Calculation
-Hoardi uses nearest-neighbor pathfinding to determine chest order:
-- Chests are grouped into "floors" (Y-levels within 1 block of each other)
-- Within each floor, chests are visited in logical order starting from the root
-- Vertical columns are processed bottom-to-top (configurable)
+Items that don't fit go back to your inventory, or drop at your feet if that is full. With an empty shulker box the click just opens the chest.
 
 ## Configuration
 
-The `config.yml` file is generated on first run. Here's a detailed breakdown:
-
-### Sorting Triggers
+`plugins/Hoardi/config.yml` is created on the first start. The settings that matter:
 
 ```yaml
-# Sort items when a player closes a chest in the network
-quick-sort-on-close: true
+settings:
+  network_radius: 32          # blocks: how close a shelf must be to join a network
+  split_threshold: 50         # % of a chest: above this a category gets its own chest
+  min_items_for_split: 32     # smaller categories never split
+  sort_delay_ticks: 10        # wait after closing a chest before sorting (20 ticks = 1 s)
+  debug: false
 
-# Automatic full reorganization interval in ticks (20 ticks = 1 second)
-# Set to 0 to disable automatic reorganization
-# Example: 72000 = every hour
-full-reorganize-interval: 0
+performance:
+  quick_sort_on_close: true       # sort when a network chest is closed
+  full_reorganize_interval: 12000 # ticks between automatic full sorts (12000 = 10 min)
 ```
 
-### Splitting Behavior
+The `spatial` section and `items_per_tick` are leftovers and currently have no effect.
+
+### Categories
 
 ```yaml
-# When a category fills more than X% of a chest, it gets its own chest
-# Lower value = more separation (needs more chests)
-# Higher value = more merging (fewer chests needed)
-split-threshold: 50
-```
+category_order:        # fill order from the root: early game first, misc always last
+  - wood
+  - terrain
+  - stone
+  # ...
 
-**Examples:**
-| split-threshold | Effect |
-|-----------------|--------|
-| `25` | Very aggressive splitting - even quarter-full categories get own chest |
-| `50` | Balanced (default) - half-full categories get own chest |
-| `75` | Conservative - only very full categories split |
-| `100` | Never split - always merge by parent category |
-
-### Chest Ordering
-
-```yaml
-# Process vertical chest columns from bottom to top
-# Set to false for top-to-bottom ordering
-bottom-to-top: true
-```
-
-This affects the order items are placed when you have stacked chests:
-- `true`: Ground level chests fill first, then upper levels
-- `false`: Top chests fill first, then lower levels
-
-### Category Definitions
-
-```yaml
-categories:
-  # Format: category/subcategory: [ITEM1, ITEM2, ...]
-
-  wood/oak: [OAK_LOG, OAK_PLANKS, OAK_SLAB, ...]
-  wood/birch: [BIRCH_LOG, BIRCH_PLANKS, ...]
-  wood/sticks: [STICK]
-
-  ores/iron: [IRON_ORE, DEEPSLATE_IRON_ORE, RAW_IRON, IRON_INGOT, IRON_BLOCK]
-  ores/gold: [GOLD_ORE, DEEPSLATE_GOLD_ORE, RAW_GOLD, GOLD_INGOT, GOLD_BLOCK]
-
+paths:                 # category/subcategory: [MATERIAL, ...]
+  wood/oak: [OAK_LOG, OAK_WOOD, OAK_PLANKS, OAK_SLAB, ...]
+  ores/iron: [IRON_ORE, DEEPSLATE_IRON_ORE, RAW_IRON, IRON_INGOT, IRON_BLOCK, ...]
   food/meat: [BEEF, COOKED_BEEF, PORKCHOP, COOKED_PORKCHOP, ...]
 
-  # ... 300+ items across 80+ categories
+display_names:         # shown in /hoardi stats
+  ores: "Ores & Minerals"
 ```
 
-### Category Hierarchy
-
-Categories use a path-like structure where `/` separates levels:
+Categories use `/` for levels. Merging follows that tree: siblings first, then the whole root category.
 
 ```
-wood/               <- Root category
-├── oak             <- Leaf category (wood/oak)
-├── birch           <- Leaf category (wood/birch)
-├── sticks          <- Leaf category (wood/sticks)
+wood/
+├── oak
+├── birch
+├── sticks
 └── ...
-
 ores/
 ├── iron
 ├── gold
-├── diamond
 └── ...
 ```
 
-**How merging works:**
-- With enough chests: Each leaf category (`wood/oak`, `wood/birch`) gets its own chest
-- Limited chests: Siblings merge (`wood/oak` + `wood/birch` → `wood` chest)
-- Very limited: All wood items share one chest
-
-### Display Names
+You can add your own categories or override existing ones:
 
 ```yaml
-category-names:
-  wood: "Wood & Logs"
-  ores: "Ores & Minerals"
-  food: "Food & Cooking"
-  # Used in /hoardi stats output
-```
-
-### Adding Custom Categories
-
-You can add your own categories or reorganize existing ones:
-
-```yaml
-categories:
-  # Create a new category for your base materials
+paths:
   mybase/building: [STONE, COBBLESTONE, DIRT, GRAVEL]
-  mybase/decoration: [FLOWER_POT, PAINTING, ITEM_FRAME]
-
-  # Override an existing category
-  wood/oak: [OAK_LOG, OAK_PLANKS]  # Simplified version
+  wood/oak: [OAK_LOG, OAK_PLANKS]
 ```
 
-Items not in any category go to `misc`.
+Items without a category go to `misc`. Items your `config.yml` doesn't know yet (for example after a Minecraft update) use the bundled default categories, and item names your server version doesn't have yet are skipped.
 
-## Building from Source
+## Building from source
 
 ```bash
-# Clone the repository
-git clone https://github.com/mneuhaus/hoarder.git
-cd hoarder
-
-# Build with Maven (requires Java 25 - use Docker if needed)
-docker run --rm -v "$(pwd)":/app -w /app maven:3.9-eclipse-temurin-25 mvn clean package
-
-# Or with make commands
-make build
-
-# Build and deploy to test server
-make deploy
-make restart
+git clone https://github.com/mneuhaus/minecraft-plugin-hoardi.git
+cd minecraft-plugin-hoardi
+make build        # target/Hoardi-<version>.jar, built in Docker
 ```
 
-### Development Commands
+The build runs Maven in Docker with JDK 25 (the 26.x API needs it) and produces a jar for Java 21.
 
 | Command | Description |
 |---------|-------------|
-| `make build` | Build the plugin JAR |
-| `make deploy` | Build and copy to test server |
-| `make start` | Start the test server |
-| `make stop` | Stop the test server |
-| `make restart` | Deploy and restart server |
-| `make logs` | View server logs |
+| `make build` | Build the plugin jar |
+| `make compat` | Compile against the oldest supported API (Paper and Spigot 1.21.9) |
+| `tools/compat/smoke.sh <version>` | Run the smoke test on a real Paper server of that version |
+| `make deploy` | Build and copy the jar to the local test server |
+| `make start` / `make stop` | Start or stop the test server (`test/docker-compose.yml`) |
+| `make restart` | Deploy and restart the test server |
+| `make logs` | Follow the test server log |
+
+## Issues and ideas
+
+Bug reports and ideas are welcome in the [issue tracker](https://github.com/mneuhaus/minecraft-plugin-hoardi/issues).
 
 ## License
 
-MIT License - feel free to use, modify, and distribute.
-
-## Credits
-
-Created by Marc Neuhaus
-
----
-
-**Happy Hoarding!**
-
-## Supported Shelf Types
-
-All Minecraft 26.1.2+ shelf variants are supported:
-- Oak Shelf
-- Spruce Shelf
-- Birch Shelf
-- Jungle Shelf
-- Acacia Shelf
-- Dark Oak Shelf
-- Mangrove Shelf
-- Cherry Shelf
-- Pale Oak Shelf
-- Bamboo Shelf
-- Crimson Shelf
-- Warped Shelf
-
-## Supported Container Types
-
-Shelves can be attached to:
-- **Chests** (single and double)
-- **Barrels**
-- **Copper Chests** (if available in your Minecraft version)
+[MIT](LICENSE), created by Marc Neuhaus.

@@ -19,7 +19,7 @@ fi
 
 # Configuration
 API_BASE="https://api.modrinth.com/v2"
-USER_AGENT="Hoardi-Publisher/1.0 (github.com/mneuhaus/hoarder)"
+USER_AGENT="Hoardi-Publisher/1.0 (github.com/mneuhaus/minecraft-plugin-hoardi)"
 
 # Project metadata
 PROJECT_SLUG="hoardi"

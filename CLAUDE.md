@@ -2,16 +2,15 @@
 
 ## Project Overview
 
-Hoarder is a Minecraft Paper plugin (1.21.10+) for intelligent auto-sorting chest networks with shelf previews.
+Hoarder (published as Hoardi) is a Minecraft plugin for Paper and Spigot 1.21.9 – 26.3 for intelligent auto-sorting chest networks with shelf previews.
 
 ## Build Commands
 
 ```bash
-# Build with Docker (required - needs Java 21)
-docker run --rm -v "$(pwd)":/app -w /app maven:3.9-eclipse-temurin-21 mvn clean package
-
-# Deploy to test server
-cp target/Hoardi-1.0.0.jar test/data/plugins/
+make build      # Maven in Docker with JDK 25 (the 26.x API needs it), jar targets Java 21
+make compat     # compile against the oldest supported API (Paper + Spigot 1.21.9)
+make deploy     # build and copy to the test server
+tools/compat/smoke.sh 1.21.10   # smoke test on a real Paper server of that version
 ```
 
 ## Project Structure
@@ -87,8 +86,7 @@ Builds a test warehouse with Oak shelves on near row, Birch shelves on far row (
 ## Common Tasks
 
 ### Adding a new shelf material
-1. Add to `SHELF_MATERIALS` set in `ShelfManager.java`
-2. That's it - everything else is dynamic
+Nothing to do: `SHELF_MATERIALS` in `ShelfManager.java` collects every `*_SHELF` the running server knows (Poplar in 26.3 worked without a change).
 
 ### Changing network grouping behavior
 - Edit `NetworkManager.findNearbyNetwork()` and `getOrCreateNetwork()`
