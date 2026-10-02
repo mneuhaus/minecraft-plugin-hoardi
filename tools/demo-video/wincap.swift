@@ -13,8 +13,11 @@ func die(_ msg: String) -> Never {
 
 func findWindow() async throws -> SCWindow {
     let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
+    // WINCAP_PID pins the demo client: Marc may have his own Minecraft window open at the same time
+    let pid = ProcessInfo.processInfo.environment["WINCAP_PID"].flatMap { Int32($0) }
     let candidates = content.windows.filter {
         ($0.title ?? "").hasPrefix("Minecraft") && $0.frame.width > 200
+            && (pid == nil || $0.owningApplication?.processID == pid)
     }
     guard let window = candidates.max(by: { $0.frame.width < $1.frame.width }) else {
         die("no Minecraft window found")

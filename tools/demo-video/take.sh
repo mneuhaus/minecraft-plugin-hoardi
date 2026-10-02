@@ -7,9 +7,11 @@ SHOTS="${*:-all}"
 OUT="$HOME/.cache/hoardi-demo/takes"; mkdir -p "$OUT"
 MARKS="$(cd "$(dirname "$0")/../.." && pwd)/test/data/plugins/HoardiDemo/marks.log"
 STOP="$OUT/$NAME.stop"; rm -f "$STOP"
-docker exec paper-test rcon-cli "demo reset" >/dev/null
+if [ "$SHOTS" = "setup" ]; then docker exec paper-test rcon-cli "demo setupreset" >/dev/null; else docker exec paper-test rcon-cli "demo reset" >/dev/null; fi
 sleep 2
 : > "$MARKS"
+WINCAP_PID=$(pgrep -f "net.minecraft.client.main.Main.*HoardiCam" | head -1) || { echo "demo client not running"; exit 1; }
+export WINCAP_PID
 "$HOME/.cache/hoardi-demo/wincap" record "$OUT/$NAME.mov" until "$STOP" 1920 1080 60 &
 REC=$!
 sleep 1

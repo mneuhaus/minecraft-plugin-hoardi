@@ -5,6 +5,7 @@ import de.hoarder.network.ChestNetwork;
 import de.hoarder.network.NetworkManager;
 import de.hoarder.shelf.ShelfManager;
 import de.hoarder.sorting.FullReorganizeTask;
+import io.papermc.paper.block.TileStateInventoryHolder;
 import org.bukkit.Axis;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
@@ -62,6 +63,7 @@ public final class HoardiDemo extends JavaPlugin {
     private ItemDisplay cam;
     private BukkitTask running;
     private File marks;
+    private SetupScene setup;
     private final Map<String, Supplier<Shot>> shots = new LinkedHashMap<>();
 
     @Override
@@ -70,6 +72,7 @@ public final class HoardiDemo extends JavaPlugin {
         world = getServer().getWorlds().get(0);
         getDataFolder().mkdirs();
         marks = new File(getDataFolder(), "marks.log");
+        setup = new SetupScene(this, hoardi, world);
         defineShots();
     }
 
@@ -103,9 +106,26 @@ public final class HoardiDemo extends JavaPlugin {
                 sender.sendMessage("camera at " + args[1] + " t=" + sec);
             }
             case "shot" -> runShots(List.of(args).subList(1, args.length));
-            case "all" -> runShots(new ArrayList<>(shots.keySet()));
+            case "all" -> runShots(List.of("hall", "dump", "sorted", "find", "grow", "end"));
+            case "setupbuild" -> {
+                setup.build();
+                setup.reset();
+                sender.sendMessage("setup set built at " + SetupScene.SX + " " + SetupScene.SY + " " + SetupScene.SZ);
+            }
+            case "setupreset" -> {
+                setup.reset();
+                sender.sendMessage("setup reset");
+            }
             case "free" -> stopCamera();
             case "shots" -> sender.sendMessage(String.join(", ", shots.keySet()));
+            case "shelves" -> {
+                // which shelf blocks this server + Hoardi build treat as network shelves
+                List<String> names = new ArrayList<>();
+                for (Material m : Material.values()) {
+                    if (hoardi.getShelfManager().isShelf(m)) names.add(m.name());
+                }
+                sender.sendMessage(names.size() + " shelf types: " + String.join(", ", names));
+            }
             case "stats" -> {
                 // per wall and row: used slots of each chest along x
                 for (int side : new int[]{-1, 1}) {
@@ -147,7 +167,7 @@ public final class HoardiDemo extends JavaPlugin {
             for (int z = -6; z <= 6; z++) {
                 for (int y = -1; y <= 6; y++) {
                     Block b = block(x, y, z);
-                    if (b.getState() instanceof Container c) c.getInventory().clear();
+                    if (b.getState() instanceof TileStateInventoryHolder h) h.getInventory().clear();
                     Material m;
                     if (y == -1) m = Material.SPRUCE_PLANKS;
                     else if (y >= 5) m = Material.DARK_OAK_PLANKS;
@@ -409,14 +429,19 @@ public final class HoardiDemo extends JavaPlugin {
             return this;
         }
 
-        /** Camera pose at time t: Catmull-Rom through the keys, smoothstep-eased over the whole move. */
+        /**
+         * Camera pose at time t: Catmull-Rom through the keys. A simple two-key move is smoothstep-eased;
+         * longer paths keep their key times so captions can be timed against them.
+         */
         double[] pose(double t) {
             Key first = keys.get(0), last = keys.get(keys.size() - 1);
             if (keys.size() == 1 || t <= first.t()) return vec(first);
             if (t >= last.t()) return vec(last);
-            double p = (t - first.t()) / (last.t() - first.t());
-            p = p * p * (3 - 2 * p);
-            double tt = first.t() + p * (last.t() - first.t());
+            double tt = t;
+            if (keys.size() == 2) {
+                double p = (t - first.t()) / (last.t() - first.t());
+                tt = first.t() + p * p * (3 - 2 * p) * (last.t() - first.t());
+            }
             int i = 0;
             while (i < keys.size() - 2 && keys.get(i + 1).t() <= tt) i++;
             Key k1 = keys.get(i), k2 = keys.get(i + 1);
@@ -506,6 +531,8 @@ public final class HoardiDemo extends JavaPlugin {
                 sortNetwork();
             }));
 
+        shots.put("setup", () -> setup.shot());
+
         shots.put("end", () -> new Shot("end", 5)
             .key(0, -1.4, 2.5, 0.5, -90, 11)
             .key(5, -1.9, 2.7, 0.5, -90, 12));
@@ -567,7 +594,7 @@ public final class HoardiDemo extends JavaPlugin {
         stopCamera();
         Player p = camPlayer();
         p.setGameMode(GameMode.SPECTATOR);
-        p.teleport(at(4, 1, 0.5));
+        p.teleport(names.get(0).equals("setup") ? setup.at(0.5, 1, 3) : at(4, 1, 0.5));
         mark("run " + String.join(",", names));
         running = new BukkitRunnable() {
             int warmup = 60, index = -1, tick;

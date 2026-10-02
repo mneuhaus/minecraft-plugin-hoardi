@@ -1,6 +1,6 @@
 """Cuts a recorded take into the Hoardi demo video: one segment per shot, captions, crossfades.
 
-    uv run --with pillow edit.py <take-name> [out.mp4]
+    uv run --with pillow edit.py <take-name> [out.mp4] [main|setup]
 
 Reads ~/.cache/hoardi-demo/takes/<take>.mov, <take>.mov.start (epoch ms of the first frame) and
 <take>.marks (shot start/end marks written by the HoardiDemo director plugin).
@@ -17,7 +17,7 @@ W, H = 1920, 1080
 XFADE = 0.4
 
 # shot -> (trim at start, trim at end, captions [(text, from, to)] in shot time, title card?)
-PLAN = {
+MAIN = {
     "hall": (0.0, 0.1, [], ("Hoardi", "Auto-sorting chest networks for Paper servers")),
     "dump": (0.2, 0.3, [("Dump your loot into any chest", 2.4, 8.9)], None),
     "sorted": (0.0, 0.2, [("Close it, and Hoardi sorts everything into the network", 0.2, 6.6)], None),
@@ -25,6 +25,18 @@ PLAN = {
     "grow": (0.6, 2.4, [("Out of room? Add chests. Hoardi re-sorts on its own.", 0.4, 8.6)], None),
     "end": (0.0, 0.0, [], ("Hoardi", "Free & open source  ·  Modrinth & Hangar  ·  Paper 26.1.2+")),
 }
+
+SETUP = {
+    "setup": (0.0, 0.0, [
+        ("Place your chests (double chests work too)", 0.5, 4.2),
+        ("Sneak + place a shelf on each one", 4.4, 8.6),
+        ("Single chests with oak shelves", 9.4, 11.1),
+        ("Barrels with spruce shelves on top", 12.1, 13.7),
+        ("Each wood type is its own network", 14.6, 17.4),
+    ], None),
+}
+
+PLANS = {"main": MAIN, "setup": SETUP}
 
 
 def font(size, weight):
@@ -68,6 +80,7 @@ def title_png(title, subtitle, path):
 def main():
     take = sys.argv[1]
     out = Path(sys.argv[2]) if len(sys.argv) > 2 else BASE / f"hoardi-demo-{take}.mp4"
+    plan = PLANS[sys.argv[3] if len(sys.argv) > 3 else "main"]
     takes = BASE / "takes"
     mov = takes / f"{take}.mov"
     start_ms = int((takes / f"{take}.mov.start").read_text().strip())
@@ -80,7 +93,7 @@ def main():
     work = BASE / "edit" / take
     work.mkdir(parents=True, exist_ok=True)
     inputs, filters, segments = ["-i", str(mov)], [], []
-    for i, (shot, (cut_in, cut_out, captions, title)) in enumerate(PLAN.items()):
+    for i, (shot, (cut_in, cut_out, captions, title)) in enumerate(plan.items()):
         t0 = marks[("start", shot)] + cut_in
         t1 = marks[("end", shot)] - cut_out
         dur = t1 - t0

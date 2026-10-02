@@ -12,6 +12,15 @@ Films the Hoardi demo on the local test server (`test/`, Paper 26.2, port 25566)
 | `edit.py` | Cuts the take per shot, adds captions/title cards (Inter, OFL) and crossfades -> `out/hoardi-demo.mp4`. |
 | `clean-pack/` | Resource pack without crosshair (currently not picked up by the client; spectator view shows none anyway). |
 
+Setup clip (three layouts + one colour per network): `demo setupbuild` once, then `./take.sh s1 setup` and
+`uv run --with pillow edit.py s1 out/hoardi-setup.mp4 setup`.
+
+Never relaunch the client while Marc's own Minecraft is open (it steals focus); `take.sh` pins the recorder to
+the demo client's PID.
+
+Compatibility: `tools/compat/smoke.sh <paper-version>` runs the same director as a test driver against a
+throwaway Paper container (checks network build, sort, shelf previews, barrels, separate wood networks, log).
+
 ```bash
 cd tools/demo-video
 director/build.sh && ./restart.sh
