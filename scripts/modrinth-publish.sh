@@ -144,7 +144,7 @@ EOF
         -X POST "$API_BASE/project" \
         -H "Authorization: $MODRINTH_TOKEN" \
         -H "User-Agent: $USER_AGENT" \
-        -F "data=$project_data")
+        --form-string "data=$project_data")
 
     http_code=$(echo "$response" | grep "HTTP_CODE:" | cut -d: -f2)
     body=$(echo "$response" | grep -v "HTTP_CODE:")
@@ -191,7 +191,7 @@ EOF
         -X POST "$API_BASE/version" \
         -H "Authorization: $MODRINTH_TOKEN" \
         -H "User-Agent: $USER_AGENT" \
-        -F "data=$version_data" \
+        --form-string "data=$version_data" \
         -F "jar=@$jar_path;type=application/java-archive")
 
     http_code=$(echo "$response" | grep "HTTP_CODE:" | cut -d: -f2)
