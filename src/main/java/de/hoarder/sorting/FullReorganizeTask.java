@@ -736,6 +736,13 @@ public class FullReorganizeTask extends BukkitRunnable {
     /**
      * Merge similar item stacks and sort by material name
      */
+    /** One-item copy as identity key (Paper's ItemStack#asOne, kept to plain Bukkit API for Spigot). */
+    private static ItemStack singleOf(ItemStack stack) {
+        ItemStack one = stack.clone();
+        one.setAmount(1);
+        return one;
+    }
+
     private List<ItemStack> mergeAndSortStacks(List<ItemStack> items) {
         // Merge by full item identity (type + components), NOT just Material.
         // Keying by Material collapsed distinct items onto the first sample seen:
@@ -743,7 +750,7 @@ public class FullReorganizeTask extends BukkitRunnable {
         // of the first one (duplicating one payload, erasing the other). The same
         // applied to enchanted tools, potions, named items etc.
         // The arithmetic lives in StackMath so it is unit-testable.
-        Map<ItemStack, Integer> totals = StackMath.tally(items, ItemStack::asOne, ItemStack::getAmount);
+        Map<ItemStack, Integer> totals = StackMath.tally(items, FullReorganizeTask::singleOf, ItemStack::getAmount);
 
         List<Map.Entry<ItemStack, Integer>> entries = new ArrayList<>(totals.entrySet());
         entries.sort(Comparator.comparing(e -> e.getKey().getType().name()));

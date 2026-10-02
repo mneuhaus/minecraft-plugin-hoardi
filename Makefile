@@ -5,7 +5,10 @@ VERSION = $(shell grep -m1 '<version>' pom.xml | sed 's/.*<version>\(.*\)<\/vers
 # Testserver plugin directory
 TESTSERVER_PLUGINS = test/data/plugins
 
-.PHONY: build deploy clean start stop restart logs help publish publish-changelog
+# Oldest Paper API Hoardi supports (shelf blocks arrived in 1.21.9)
+COMPAT_API = 1.21.9-R0.1-SNAPSHOT
+
+.PHONY: build compat deploy clean start stop restart logs help publish publish-changelog
 
 # Default target
 all: build
@@ -15,6 +18,22 @@ build:
 	@echo "Building Hoardi plugin..."
 	@docker run --rm -v "$(shell pwd)":/app -w /app maven:3.9-eclipse-temurin-25 mvn clean package -q
 	@echo "Build complete: target/Hoardi-$(VERSION).jar"
+
+# Compile against the oldest supported API: fails if code uses anything newer than 1.21.9.
+# Tests are skipped there on purpose: the bundled config also lists 26.x items.
+compat:
+	@echo "Checking API floor ($(COMPAT_API))..."
+	@docker run --rm -v "$(shell pwd)":/src:ro -v ltw-m2:/root/.m2 maven:3.9-eclipse-temurin-25 \
+		sh -c 'cp -r /src /tmp/w && cd /tmp/w && rm -rf target && mvn -q -B compile -Dpaper.api.version=$(COMPAT_API)'
+	@echo "Compatible with Paper $(COMPAT_API) and newer"
+	@echo "Checking plain Bukkit/Spigot API ($(COMPAT_API))..."
+	@docker run --rm -v "$(shell pwd)":/src:ro -v ltw-m2:/root/.m2 maven:3.9-eclipse-temurin-25 \
+		sh -c 'cp -r /src /tmp/w && cd /tmp/w && rm -rf target && sed -i \
+		  -e "s#<groupId>io.papermc.paper</groupId>#<groupId>org.spigotmc</groupId>#" \
+		  -e "s#<artifactId>paper-api</artifactId>#<artifactId>spigot-api</artifactId>#" \
+		  -e "s#https://repo.papermc.io/repository/maven-public/#https://hub.spigotmc.org/nexus/content/repositories/snapshots/#" pom.xml \
+		  && mvn -q -B compile -Dpaper.api.version=$(COMPAT_API)'
+	@echo "Compatible with Spigot $(COMPAT_API) and newer"
 
 # Build and copy to testserver
 deploy: build
@@ -57,13 +76,13 @@ clean:
 	@echo "Clean complete"
 
 # Publish to Modrinth
-publish: build
+publish: build compat
 	@echo "Publishing to Modrinth..."
 	@./scripts/modrinth-publish.sh
 
 # Publish with changelog
 # Usage: make publish-changelog CHANGELOG="Fixed bug X"
-publish-changelog: build
+publish-changelog: build compat
 	@echo "Publishing to Modrinth with changelog..."
 	@./scripts/modrinth-publish.sh "$(shell grep -m1 '<version>' pom.xml | sed 's/.*<version>\(.*\)<\/version>.*/\1/')" "$(CHANGELOG)"
 
@@ -73,6 +92,7 @@ help:
 	@echo ""
 	@echo "  Build:"
 	@echo "    make build    - Build the plugin JAR"
+	@echo "    make compat   - Check the code against the oldest supported API (1.21.9)"
 	@echo "    make deploy   - Build and copy to testserver"
 	@echo "    make clean    - Remove build artifacts"
 	@echo ""

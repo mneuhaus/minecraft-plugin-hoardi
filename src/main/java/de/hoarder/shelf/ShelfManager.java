@@ -53,21 +53,10 @@ public class ShelfManager {
         }
     }
 
-    // All shelf material types
-    private static final Set<Material> SHELF_MATERIALS = Set.of(
-        Material.OAK_SHELF,
-        Material.SPRUCE_SHELF,
-        Material.BIRCH_SHELF,
-        Material.JUNGLE_SHELF,
-        Material.ACACIA_SHELF,
-        Material.DARK_OAK_SHELF,
-        Material.MANGROVE_SHELF,
-        Material.CHERRY_SHELF,
-        Material.PALE_OAK_SHELF,
-        Material.BAMBOO_SHELF,
-        Material.CRIMSON_SHELF,
-        Material.WARPED_SHELF
-    );
+    // Every shelf the running server knows, so new woods (Poplar in 26.3) work without a code change
+    private static final Set<Material> SHELF_MATERIALS = Arrays.stream(Material.values())
+        .filter(m -> m.name().endsWith("_SHELF") && !m.name().startsWith("LEGACY_"))
+        .collect(() -> EnumSet.noneOf(Material.class), Set::add, Set::addAll);
 
     public ShelfManager(JavaPlugin plugin) {
         this.plugin = plugin;

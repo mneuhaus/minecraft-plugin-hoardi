@@ -6,14 +6,16 @@
 
     <groupId>de.hoardi</groupId>
     <artifactId>Hoardi</artifactId>
-    <version>1.0.4</version>
+    <version>1.0.5</version>
     <packaging>jar</packaging>
 
     <name>Hoardi</name>
     <description>Intelligent auto-sorting chest network with shelf previews for Minecraft</description>
 
     <properties>
-        <java.version>25</java.version>
+        <!-- Java 21 bytecode + compiled against the newest API; `make compat` proves the 1.21.9 floor -->
+        <java.version>21</java.version>
+        <paper.api.version>26.3.build.143-beta</paper.api.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -28,7 +30,7 @@
         <dependency>
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
-            <version>26.2.build.121-stable</version>
+            <version>${paper.api.version}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
