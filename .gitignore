@@ -19,3 +19,6 @@ Thumbs.db
 
 # Testserver runtime data (keep docker-compose.yml)
 test/data/
+
+# Demo video renders
+tools/demo-video/out/

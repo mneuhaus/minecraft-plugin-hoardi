@@ -1,0 +1,14 @@
+name: HoardiDemo
+version: 1.0.0
+main: de.hoarder.demo.HoardiDemo
+api-version: '26.1.2'
+depend: [Hoardi]
+description: Stages and films the Hoardi demo video (test server only)
+commands:
+  demo:
+    description: Demo director
+    usage: /demo <build|reset|cam|shot|all|free|marks>
+    permission: hoardidemo.use
+permissions:
+  hoardidemo.use:
+    default: op
