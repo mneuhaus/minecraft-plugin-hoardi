@@ -49,8 +49,9 @@ public class ShelfDisplayTask extends BukkitRunnable {
                 continue;
             }
 
-            // Check if the chunk is loaded
-            if (!world.isChunkLoaded(shelfLoc.getBlockX() >> 4, shelfLoc.getBlockZ() >> 4)) {
+            // Both chunks must be loaded (a shelf on a chunk border has its chest in the next one)
+            if (!world.isChunkLoaded(shelfLoc.getBlockX() >> 4, shelfLoc.getBlockZ() >> 4)
+                || !world.isChunkLoaded(chestLoc.getBlockX() >> 4, chestLoc.getBlockZ() >> 4)) {
                 continue;
             }
 

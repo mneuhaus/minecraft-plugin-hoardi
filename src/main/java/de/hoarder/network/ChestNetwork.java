@@ -30,6 +30,11 @@ public class ChestNetwork {
     // Throttle for "network is overfull" player notifications (epoch millis)
     private long lastOverflowWarn = 0L;
 
+    // Who may add chests, open them through shelves and unload into the network (settings.network_owners).
+    // No owner: shared with everyone (networks from before 1.0.6, or created with owners turned off).
+    private UUID owner;
+    private final Set<UUID> trusted = new LinkedHashSet<>();
+
     public ChestNetwork(World world, Location root, Material shelfMaterial, HoarderConfig config) {
         this.world = world;
         this.root = root;
@@ -64,6 +69,41 @@ public class ChestNetwork {
      */
     public Location getRoot() {
         return root;
+    }
+
+    public UUID getOwner() {
+        return owner;
+    }
+
+    public void setOwner(UUID owner) {
+        this.owner = owner;
+    }
+
+    public Set<UUID> getTrusted() {
+        return Collections.unmodifiableSet(trusted);
+    }
+
+    public boolean trust(UUID player) {
+        return trusted.add(player);
+    }
+
+    public boolean untrust(UUID player) {
+        return trusted.remove(player);
+    }
+
+    /** Owner, trusted players and, for networks without owner, everyone. */
+    public boolean mayUse(UUID player) {
+        return owner == null || owner.equals(player) || trusted.contains(player);
+    }
+
+    /** True if every chest's chunk is loaded, so sorting will not load chunks by touching them. */
+    public boolean isLoaded() {
+        for (Location loc : chests.keySet()) {
+            if (!world.isChunkLoaded(loc.getBlockX() >> 4, loc.getBlockZ() >> 4)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** Mark this network as changed so the next reorganize cycle picks it up. */

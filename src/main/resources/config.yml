@@ -1,6 +1,5 @@
-# Hoarder Configuration
+# Hoardi Configuration
 # Intelligent auto-sorting chest network
-# Updated for Minecraft 26.1.2
 
 settings:
   # Radius in blocks to search for network chests from root
@@ -15,16 +14,16 @@ settings:
   # Delay in ticks after chest close before sorting (20 ticks = 1 second)
   sort_delay_ticks: 10
 
+  # true: a network belongs to the player who placed its first shelf. Other players can't add
+  # chests to it, open its chests through a shelf or unload shulkers into it until the owner
+  # runs /hoardi trust <player>. Networks from before 1.0.6 have no owner and stay shared.
+  # false: every network is shared by everyone (fine for a server among friends).
+  network_owners: true
+
   # Enable debug messages
   debug: false
 
 spatial:
-  # How many chests stacked vertically count as one column
-  stack_height: 3
-
-  # Spiral direction from root: COUNTER_CLOCKWISE or CLOCKWISE
-  spiral_direction: COUNTER_CLOCKWISE
-
   # Vertical order within a stack: BOTTOM_TO_TOP or TOP_TO_BOTTOM
   vertical_order: BOTTOM_TO_TOP
 
@@ -34,9 +33,6 @@ performance:
 
   # Interval in ticks for full network reorganization (12000 = 10 minutes)
   full_reorganize_interval: 12000
-
-  # Maximum item stacks to move per tick during sorting
-  items_per_tick: 64
 
 # =============================================================================
 # CATEGORY ORDER

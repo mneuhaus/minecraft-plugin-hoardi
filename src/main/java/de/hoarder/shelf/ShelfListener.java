@@ -9,9 +9,11 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.Chest;
+import org.bukkit.block.Container;
 import org.bukkit.block.DoubleChest;
 import org.bukkit.block.ShulkerBox;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -68,27 +70,28 @@ public class ShelfListener implements Listener {
 
         if (chest != null) {
             if (player.isSneaking()) {
+                // A chest of somebody else's storage can't be pulled into your network by a shelf
+                ChestNetwork current = networkManager.getNetworkForChest(chest.getLocation());
+                if (current != null && !mayUse(player, current)) {
+                    player.sendMessage("§c[Hoardi] §7This chest belongs to §e" + NetworkManager.ownerName(current)
+                        + "§7's storage.");
+                    return;
+                }
+
                 // Sneak + place = create preview shelf and add to network
                 shelfManager.registerShelf(placed, chest);
+                ChestNetwork network = networkManager.onShelfRegistered(placed.getLocation(), chest.getLocation(),
+                    player.getUniqueId());
+                if (network == null) {
+                    return;
+                }
 
-                // Check if this chest should be added to a network (pass shelf location for material)
-                networkManager.onShelfRegistered(placed.getLocation(), chest.getLocation());
-
-                // Get shelf material for messaging
-                Material shelfMaterial = placed.getType();
-                String materialName = formatMaterialName(shelfMaterial);
-
-                // Check for nearby shelves of same material
-                List<Location> nearby = networkManager.findNearbyShelvesSameMaterial(
-                    placed.getLocation(), shelfMaterial);
-
-                player.sendMessage("§a[Hoardi] §7" + materialName + " shelf registered!");
-
-                if (nearby.isEmpty()) {
+                String materialName = formatMaterialName(network.getShelfMaterial());
+                player.sendMessage("§a[Hoardi] §7" + formatMaterialName(placed.getType()) + " shelf registered!");
+                if (network.size() == 1) {
                     player.sendMessage("§7This is the start of a new §e" + materialName + "§7 network.");
                 } else {
-                    player.sendMessage("§7Added to existing §e" + materialName + "§7 network (" +
-                        (nearby.size() + 1) + " chests).");
+                    player.sendMessage("§7Added to the §e" + materialName + "§7 network (" + network.size() + " chests).");
                 }
 
                 player.sendMessage("§7Click the shelf to open the chest. Use different shelf types for separate networks!");
@@ -205,21 +208,28 @@ public class ShelfListener implements Listener {
             return;
         }
 
-        Player player = event.getPlayer();
-        ItemStack itemInHand = player.getInventory().getItemInMainHand();
-
-        // Check if player is holding a shulker box
-        if (isShulkerBox(itemInHand.getType())) {
-            event.setCancelled(true);
-            unloadShulkerIntoNetwork(player, itemInHand, shelfLoc);
+        // A claim or protection plugin refused the click: no way into the chest through the shelf either
+        if (event.useInteractedBlock() == Event.Result.DENY) {
             return;
         }
 
-        // Normal interaction - open the chest
+        // The shelf's items are only a preview: never let vanilla hand them out
         event.setCancelled(true);
 
+        Player player = event.getPlayer();
         Location chestLoc = shelfManager.getChestLocation(shelfLoc);
         if (chestLoc == null) {
+            return;
+        }
+        ChestNetwork network = networkManager.getNetworkForChest(chestLoc);
+        if (network != null && !mayUse(player, network)) {
+            player.sendMessage("§c[Hoardi] §7This storage belongs to §e" + NetworkManager.ownerName(network) + "§7.");
+            return;
+        }
+
+        ItemStack itemInHand = player.getInventory().getItemInMainHand();
+        if (isShulkerBox(itemInHand.getType())) {
+            unloadShulkerIntoNetwork(player, itemInHand, shelfLoc);
             return;
         }
 
@@ -380,10 +390,8 @@ public class ShelfListener implements Listener {
 
         Location chestLoc = null;
 
-        // Handle both single chest and double chest
-        if (holder instanceof Chest chest) {
-            chestLoc = chest.getLocation();
-        } else if (holder instanceof DoubleChest doubleChest) {
+        // Double chests, then any other container block (chests, copper chests, barrels)
+        if (holder instanceof DoubleChest doubleChest) {
             // For double chests, get the left side location
             InventoryHolder leftSide = doubleChest.getLeftSide();
             InventoryHolder rightSide = doubleChest.getRightSide();
@@ -402,6 +410,8 @@ public class ShelfListener implements Listener {
             } else if (rightSide instanceof Chest rightChest) {
                 chestLoc = rightChest.getLocation();
             }
+        } else if (holder instanceof Container container) {
+            chestLoc = container.getLocation();
         } else {
             return;
         }
@@ -432,8 +442,8 @@ public class ShelfListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onInventoryMoveItem(org.bukkit.event.inventory.InventoryMoveItemEvent event) {
         InventoryHolder holder = event.getDestination().getHolder();
-        if (holder instanceof Chest chest) {
-            Location loc = chest.getLocation();
+        if (holder instanceof Container container) {
+            Location loc = container.getLocation();
             if (shelfManager.hasShelf(loc)) {
                 markNetworkDirty(loc);
             }
@@ -449,6 +459,12 @@ public class ShelfListener implements Listener {
                 }
             }
         }
+    }
+
+    /** With network owners off everyone may; otherwise owner, trusted players and admins. */
+    private boolean mayUse(Player player, ChestNetwork network) {
+        return !plugin.getHoarderConfig().isNetworkOwners() || network.mayUse(player.getUniqueId())
+            || player.hasPermission("hoarder.admin");
     }
 
     private void markNetworkDirty(Location chestLoc) {

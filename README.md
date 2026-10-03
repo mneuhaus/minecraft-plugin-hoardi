@@ -32,6 +32,7 @@ Works with vanilla clients, no mod needed.
 - **Auto-sorting network**: close any chest in the network and its items move to the chest of their category
 - **Shelf previews**: shelves show the top items of the chest behind them, and how full it is
 - **One network per wood type**: oak shelves form one network, birch shelves another, even right next to each other
+- **Safe on public servers**: a network belongs to whoever placed its first shelf. Others can't add chests to it, open it through a shelf or unload into it until the owner trusts them. Claim plugins are respected. Turn it off for a server among friends
 - **Grows with you**: categories merge while space is tight and split into their own chests once they are big enough
 - **1,600+ items in 165 categories** out of the box, fully configurable
 - **Shulker unloading**: right-click a shelf with a filled shulker box to empty it into the network
@@ -77,6 +78,9 @@ New wood types work without an update: Hoardi picks up every shelf the server kn
 | `/hoardi info` | Show the networks in your world | - |
 | `/hoardi networks` | Short summary of all networks | - |
 | `/hoardi stats` | Fill level, categories and which chest holds what | - |
+| `/hoardi trust <player>` | Let a player use the network you look at (owner or admin) | - |
+| `/hoardi untrust <player>` | Take that back | - |
+| `/hoardi claim` | Become owner of a network that has none (admins: any network) | - |
 | `/hoardi setroot` | Make the chest you look at the network root | `hoarder.admin` |
 | `/hoardi sort` | Reorganize the network now | `hoarder.admin` |
 | `/hoardi reload` | Reload the configuration | `hoarder.admin` |
@@ -98,7 +102,15 @@ The permission nodes still carry the plugin's old name, `hoarder`.
 
 Sneak-placing a shelf against a chest (or on top of it) registers the chest. Shelves of the **same wood** within `network_radius` (default 32 blocks) join the same network. A different wood always starts a separate network, so you can keep, say, building blocks and loot apart in the same room.
 
-Placing a shelf without sneaking stays a plain vanilla shelf.
+Placing a shelf without sneaking stays a plain vanilla shelf. A chest belongs to one network only: a second shelf on it (on the other side, on top, another wood) just shows its contents too.
+
+### Owners
+
+With `network_owners: true` (the default) a network belongs to the player who placed its first shelf. Another player's shelf nearby starts that player's own network, even with the same wood, and their shelf on one of your chests is refused. Clicking your shelves, or unloading a shulker into them, only works for you, players you trusted with `/hoardi trust <player>` and admins. `/hoardi info` shows owner and trusted players.
+
+If a claim or protection plugin refuses a click on a shelf, Hoardi doesn't open the chest behind it either.
+
+Networks created before 1.0.6 have no owner and stay shared; `/hoardi claim` makes one yours. With `network_owners: false` every network is shared, like before.
 
 ### Shelf previews
 
@@ -119,7 +131,7 @@ A double chest with two shelves uses all six slots. Variants of the same block (
 2. **Categorize**: each item gets its category, for example `wood/oak`, `ores/iron` or `food/meat`
 3. **Distribute**: categories fill the chests in `category_order`, starting at the root, floor by floor and bottom to top within a stack
 
-Sorting runs when someone closes a network chest (after a short delay), every 10 minutes, and on `/hoardi sort`.
+Sorting runs when someone closes a network chest or barrel (after a short delay), every 10 minutes, and on `/hoardi sort`.
 
 **Splitting:** each leaf category such as `wood/oak` gets its own chest when there is room. With fewer chests than categories, Hoardi merges:
 
@@ -156,14 +168,18 @@ settings:
   split_threshold: 50         # % of a chest: above this a category gets its own chest
   min_items_for_split: 32     # smaller categories never split
   sort_delay_ticks: 10        # wait after closing a chest before sorting (20 ticks = 1 s)
+  network_owners: true        # networks belong to their first player; false = all shared
   debug: false
+
+spatial:
+  vertical_order: BOTTOM_TO_TOP   # fill order within a stack of chests (or TOP_TO_BOTTOM)
 
 performance:
   quick_sort_on_close: true       # sort when a network chest is closed
   full_reorganize_interval: 12000 # ticks between automatic full sorts (12000 = 10 min)
 ```
 
-The `spatial` section and `items_per_tick` are leftovers and currently have no effect.
+The automatic full sort skips networks whose chunks aren't loaded, so it never loads the world on its own; they get sorted once someone is around again.
 
 ### Categories
 

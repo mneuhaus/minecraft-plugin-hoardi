@@ -4,9 +4,12 @@ import de.hoarder.HoarderPlugin;
 import de.hoarder.TestWarehouseBuilder;
 import de.hoarder.network.ChestNetwork;
 import de.hoarder.network.NetworkChest;
+import de.hoarder.network.NetworkManager;
 import de.hoarder.sorting.FullReorganizeTask;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
@@ -36,6 +39,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Command handler for /hoardi
@@ -45,7 +49,7 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
     private final HoarderPlugin plugin;
 
     private static final List<String> SUBCOMMANDS = Arrays.asList(
-        "info", "networks", "setroot", "sort", "reload", "stats", "templates", "test", "export", "fill"
+        "info", "networks", "trust", "untrust", "claim", "setroot", "sort", "reload", "stats", "templates", "test", "export", "fill"
     );
 
     public HoarderCommand(HoarderPlugin plugin) {
@@ -66,6 +70,9 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
         return switch (subcommand) {
             case "info" -> showInfo(sender);
             case "networks" -> showNetworks(sender);
+            case "trust" -> trust(sender, args, true);
+            case "untrust" -> trust(sender, args, false);
+            case "claim" -> claim(sender);
             case "setroot" -> setRoot(sender);
             case "sort" -> triggerSort(sender);
             case "reload" -> reload(sender);
@@ -93,6 +100,11 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§eCommands:");
         sender.sendMessage("§f/hoardi info §7- Show network information");
         sender.sendMessage("§f/hoardi networks §7- Show all networks summary");
+        if (plugin.getHoarderConfig().isNetworkOwners()) {
+            sender.sendMessage("§f/hoardi trust <player> §7- Let a player use your network (look at it)");
+            sender.sendMessage("§f/hoardi untrust <player> §7- Take that back");
+            sender.sendMessage("§f/hoardi claim §7- Become owner of a network without one");
+        }
         sender.sendMessage("§f/hoardi setroot §7- Set network root (look at chest or shelf)");
         sender.sendMessage("§f/hoardi sort §7- Trigger full reorganization");
         sender.sendMessage("§f/hoardi stats §7- Show detailed statistics");
@@ -123,6 +135,9 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
                     ChestNetwork network = worldNetworks.get(i);
                     sender.sendMessage("§7  Network #" + (i + 1) + ":");
                     sender.sendMessage("§7    Root: §f" + formatLocation(network.getRoot()));
+                    if (plugin.getHoarderConfig().isNetworkOwners()) {
+                        sender.sendMessage("§7    Owner: §f" + NetworkManager.ownerName(network) + trustedSuffix(network));
+                    }
                     sender.sendMessage("§7    Chests: §f" + network.size());
 
                     var stats = network.getStats();
@@ -136,6 +151,122 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
         }
 
         return true;
+    }
+
+    /** The network of the chest (or shelf) the player looks at, or null with a message. */
+    private ChestNetwork targetNetwork(Player player) {
+        Block target = player.getTargetBlockExact(5);
+        Block chest = null;
+        if (target != null && plugin.getShelfManager().isShelf(target)) {
+            chest = plugin.getShelfManager().findChestBehindShelf(target);
+        } else if (target != null && plugin.getShelfManager().isChest(target)) {
+            chest = target;
+        }
+        ChestNetwork network = chest != null ? plugin.getNetworkManager().getNetworkForChest(chest.getLocation()) : null;
+        if (network == null) {
+            player.sendMessage("§cLook at a chest or shelf of a Hoardi network.");
+        }
+        return network;
+    }
+
+    private boolean ownersEnabled(CommandSender sender) {
+        if (!plugin.getHoarderConfig().isNetworkOwners()) {
+            sender.sendMessage("§7Network owners are off on this server: every network is shared.");
+            return false;
+        }
+        return true;
+    }
+
+    private String trustedSuffix(ChestNetwork network) {
+        if (network.getTrusted().isEmpty()) {
+            return "";
+        }
+        List<String> names = new ArrayList<>();
+        for (UUID uuid : network.getTrusted()) {
+            String name = Bukkit.getOfflinePlayer(uuid).getName();
+            names.add(name != null ? name : uuid.toString().substring(0, 8));
+        }
+        return " §7(trusted: §f" + String.join(", ", names) + "§7)";
+    }
+
+    /** /hoardi trust|untrust <player>: owner (or admin) lets a player use the network they look at. */
+    private boolean trust(CommandSender sender, String[] args, boolean grant) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§cThis command can only be used by players.");
+            return true;
+        }
+        if (!ownersEnabled(sender)) {
+            return true;
+        }
+        if (args.length < 2) {
+            player.sendMessage("§cUsage: /hoardi " + (grant ? "trust" : "untrust") + " <player>");
+            return true;
+        }
+        ChestNetwork network = targetNetwork(player);
+        if (network == null) {
+            return true;
+        }
+        if (!player.getUniqueId().equals(network.getOwner()) && !player.hasPermission("hoarder.admin")) {
+            player.sendMessage("§cOnly " + NetworkManager.ownerName(network) + " can change who may use this network.");
+            return true;
+        }
+        OfflinePlayer other = findPlayer(args[1]);
+        if (other == null) {
+            player.sendMessage("§cNo player called " + args[1] + " has been on this server.");
+            return true;
+        }
+        boolean changed = grant ? network.trust(other.getUniqueId()) : network.untrust(other.getUniqueId());
+        plugin.getNetworkManager().save();
+        String name = other.getName() != null ? other.getName() : args[1];
+        if (grant) {
+            player.sendMessage(changed ? "§a[Hoardi] §f" + name + "§7 may now use this network."
+                : "§7" + name + " could already use this network.");
+        } else {
+            player.sendMessage(changed ? "§a[Hoardi] §f" + name + "§7 can no longer use this network."
+                : "§7" + name + " was not trusted here.");
+        }
+        return true;
+    }
+
+    /** /hoardi claim: take over a network without owner (admins: any network). */
+    private boolean claim(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§cThis command can only be used by players.");
+            return true;
+        }
+        if (!ownersEnabled(sender)) {
+            return true;
+        }
+        ChestNetwork network = targetNetwork(player);
+        if (network == null) {
+            return true;
+        }
+        if (player.getUniqueId().equals(network.getOwner())) {
+            player.sendMessage("§7This network is already yours.");
+            return true;
+        }
+        if (network.getOwner() != null && !player.hasPermission("hoarder.admin")) {
+            player.sendMessage("§cThis network belongs to " + NetworkManager.ownerName(network) + ".");
+            return true;
+        }
+        network.setOwner(player.getUniqueId());
+        plugin.getNetworkManager().save();
+        player.sendMessage("§a[Hoardi] §7This network is yours now. Others need §f/hoardi trust <player>§7.");
+        return true;
+    }
+
+    /** Online player first, then anyone who has played here (no blocking name lookups). */
+    private OfflinePlayer findPlayer(String name) {
+        Player online = Bukkit.getPlayerExact(name);
+        if (online != null) {
+            return online;
+        }
+        for (OfflinePlayer offline : Bukkit.getOfflinePlayers()) {
+            if (name.equalsIgnoreCase(offline.getName())) {
+                return offline;
+            }
+        }
+        return null;
     }
 
     /**
@@ -378,9 +509,16 @@ public class HoarderCommand implements CommandExecutor, TabCompleter {
                 .toList();
         }
 
-        // Tab complete template names for test/export commands
+        // Tab complete template names for test/export commands, player names for trust/untrust
         if (args.length == 2) {
             String subcommand = args[0].toLowerCase();
+            if (subcommand.equals("trust") || subcommand.equals("untrust")) {
+                String prefix = args[1].toLowerCase();
+                return Bukkit.getOnlinePlayers().stream()
+                    .map(Player::getName)
+                    .filter(n -> n.toLowerCase().startsWith(prefix))
+                    .toList();
+            }
             if (subcommand.equals("test") || subcommand.equals("export")) {
                 String prefix = args[1].toLowerCase();
                 TestWarehouseBuilder builder = new TestWarehouseBuilder(plugin);

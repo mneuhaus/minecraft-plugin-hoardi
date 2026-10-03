@@ -3,7 +3,8 @@
 #   tools/compat/smoke.sh 1.21.10        (prints PASS/FAIL lines, exit 1 on any failure)
 # Uses the demo director plugin as a test driver: it builds a 66-chest Birch network through
 # Hoardi's API, fills and sorts it, and builds the setup room (double chests, barrels with
-# shelves on top, three shelf woods). Needs target/Hoardi-*.jar and the director jar built.
+# shelves on top, three shelf woods) and checks network owners. Needs target/Hoardi-*.jar and the
+# director jar built.
 set -uo pipefail
 VERSION="$1"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -28,12 +29,13 @@ pass() { echo "PASS $VERSION  $1"; }
 fail() { echo "FAIL $VERSION  $1"; fails=$((fails + 1)); }
 rcon() { docker exec "$NAME" rcon-cli "$@" 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g; s/§.//g'; }
 
+# grep without -q: an early exit would SIGPIPE docker logs, and pipefail turns that into a miss
 for _ in $(seq 1 180); do
-  docker logs "$NAME" 2>&1 | grep -q 'Done (' && break
+  docker logs "$NAME" 2>&1 | grep 'Done (' >/dev/null && break
   docker ps -q -f name="$NAME" | grep -q . || break
   sleep 2
 done
-if ! docker logs "$NAME" 2>&1 | grep -q 'Done ('; then
+if ! docker logs "$NAME" 2>&1 | grep 'Done (' >/dev/null; then
   docker logs "$NAME" > "$LOG" 2>&1
   fail "server did not start (log: $LOG)"
   docker rm -f "$NAME" >/dev/null
@@ -59,6 +61,12 @@ echo "$shelf_hall" | grep -q "minecraft:" && pass "Birch shelf shows a preview" 
 shelf_barrel=$(rcon "data get block 1005 -59 1099 Items")
 echo "$shelf_barrel" | grep -q "minecraft:" && pass "Spruce shelf on a barrel shows a preview" || fail "barrel shelf has no preview: $shelf_barrel"
 rcon "hoardi networks" | grep -qi "spruce" && pass "Spruce shelves form their own network" || fail "no separate Spruce network"
+
+owners=$(rcon "demo checkowners")
+n_pass=$(echo "$owners" | grep -c '^PASS'); n_fail=$(echo "$owners" | grep -c '^FAIL')
+[ "$n_pass" -ge 7 ] && [ "$n_fail" -eq 0 ] \
+  && pass "network owners: $n_pass checks (owner, stranger, trust, one network per chest, save+load, shared, owners off)" \
+  || fail "network owners: $(echo "$owners" | grep FAIL)"
 
 shelves=$(rcon "demo shelves")
 case "$VERSION" in

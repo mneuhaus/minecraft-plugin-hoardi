@@ -245,18 +245,6 @@ public class ShelfManager {
         return new HashSet<>(shelfData.keySet());
     }
 
-    /**
-     * Get all tracked shelf locations of a specific material
-     */
-    public Set<Location> getTrackedShelvesByMaterial(Material material) {
-        Set<Location> result = new HashSet<>();
-        for (Map.Entry<Location, ShelfData> entry : shelfData.entrySet()) {
-            if (entry.getValue().getShelfMaterial() == material) {
-                result.add(entry.getKey());
-            }
-        }
-        return result;
-    }
 
     /**
      * Get all tracked chest locations (unique)

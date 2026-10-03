@@ -65,6 +65,7 @@ public final class HoardiDemo extends JavaPlugin {
     private BukkitTask running;
     private File marks;
     private SetupScene setup;
+    private Checks checks;
     private final Map<String, Supplier<Shot>> shots = new LinkedHashMap<>();
 
     @Override
@@ -74,6 +75,7 @@ public final class HoardiDemo extends JavaPlugin {
         getDataFolder().mkdirs();
         marks = new File(getDataFolder(), "marks.log");
         setup = new SetupScene(this, hoardi, world);
+        checks = new Checks(this, hoardi, world);
         defineShots();
     }
 
@@ -121,6 +123,8 @@ public final class HoardiDemo extends JavaPlugin {
                 setup.placeAllChests();
                 sender.sendMessage("north wall chests placed, builder ready with shelves");
             }
+            case "checkowners" -> checks.checkOwners(sender);
+            case "checkplayer" -> checks.checkPlayer(sender, camPlayer(), setup);
             case "free" -> stopCamera();
             case "shots" -> sender.sendMessage(String.join(", ", shots.keySet()));
             case "shelves" -> {

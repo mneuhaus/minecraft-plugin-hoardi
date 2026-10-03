@@ -4,6 +4,8 @@ import de.hoarder.HoarderPlugin;
 import de.hoarder.config.HoarderConfig;
 import de.hoarder.shelf.ShelfManager;
 import de.hoarder.sorting.FullReorganizeTask;
+import net.md_5.bungee.api.ChatMessageType;
+import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -127,6 +129,14 @@ public class NetworkManager {
 
                         Location root = new Location(world, rootX, rootY, rootZ);
                         ChestNetwork network = new ChestNetwork(world, root, shelfMaterial, config);
+                        if (networkData.get("owner") instanceof String owner) {
+                            network.setOwner(UUID.fromString(owner));
+                        }
+                        if (networkData.get("trusted") instanceof List<?> trusted) {
+                            for (Object uuid : trusted) {
+                                network.trust(UUID.fromString(uuid.toString()));
+                            }
+                        }
 
                         @SuppressWarnings("unchecked")
                         List<Map<?, ?>> chestsList = (List<Map<?, ?>>) networkData.get("chests");
@@ -186,6 +196,12 @@ public class NetworkManager {
 
                 // Save shelf material
                 networkData.put("shelf_material", network.getShelfMaterial().name());
+                if (network.getOwner() != null) {
+                    networkData.put("owner", network.getOwner().toString());
+                }
+                if (!network.getTrusted().isEmpty()) {
+                    networkData.put("trusted", network.getTrusted().stream().map(UUID::toString).toList());
+                }
 
                 // Save chests
                 List<Map<String, Object>> chestsList = new ArrayList<>();
@@ -211,39 +227,6 @@ public class NetworkManager {
         } catch (IOException e) {
             plugin.getLogger().severe("Failed to save networks: " + e.getMessage());
         }
-    }
-
-    /**
-     * Get or create network for a location (finds nearby network or creates new one)
-     * @deprecated Use getOrCreateNetwork(World, Location, Material) instead
-     */
-    @Deprecated
-    public ChestNetwork getOrCreateNetwork(World world, Location root) {
-        return getOrCreateNetwork(world, root, Material.OAK_SHELF);
-    }
-
-    /**
-     * Get or create network for a location with specific material type
-     */
-    public ChestNetwork getOrCreateNetwork(World world, Location root, Material shelfMaterial) {
-        String worldName = world.getName();
-        List<ChestNetwork> worldNetworks = networks.computeIfAbsent(worldName, k -> new ArrayList<>());
-
-        // Find existing network within radius with same material
-        int maxRadius = config.getNetworkRadius();
-        for (ChestNetwork network : worldNetworks) {
-            if (network.getShelfMaterial() == shelfMaterial &&
-                isWithinRadius(root, network.getRoot(), maxRadius)) {
-                return network;
-            }
-        }
-
-        // No nearby network found, create new one
-        ChestNetwork network = new ChestNetwork(world, root, shelfMaterial, config);
-        worldNetworks.add(network);
-        String materialName = formatMaterialName(shelfMaterial);
-        plugin.getLogger().info("Created new " + materialName + " network in " + worldName + " at " + formatLocation(root));
-        return network;
     }
 
     /**
@@ -299,13 +282,9 @@ public class NetworkManager {
         return findNearbyNetwork(chestLoc, shelfMaterial);
     }
 
-    /**
-     * Find nearby network for a location (within network_radius)
-     * @deprecated Use findNearbyNetwork(Location, Material) instead
-     */
-    @Deprecated
+    /** Any network near a location, whatever its wood (commands that act on "the network here"). */
     public ChestNetwork findNearbyNetwork(Location loc) {
-        return findNearbyNetwork(loc, null);
+        return findNearbyNetwork(loc, null, null);
     }
 
     /**
@@ -313,6 +292,14 @@ public class NetworkManager {
      * If material is null, returns any nearby network (legacy behavior)
      */
     public ChestNetwork findNearbyNetwork(Location loc, Material shelfMaterial) {
+        return findNearbyNetwork(loc, shelfMaterial, null);
+    }
+
+    /**
+     * Like {@link #findNearbyNetwork(Location, Material)}, but with network owners on only networks
+     * the player may use count, so a stranger's shelf next to your storage starts its own network.
+     */
+    public ChestNetwork findNearbyNetwork(Location loc, Material shelfMaterial, UUID player) {
         if (loc.getWorld() == null) return null;
         List<ChestNetwork> worldNetworks = networks.get(loc.getWorld().getName());
         if (worldNetworks == null) return null;
@@ -321,6 +308,9 @@ public class NetworkManager {
         for (ChestNetwork network : worldNetworks) {
             // Skip networks with different material (unless material is null for legacy compatibility)
             if (shelfMaterial != null && network.getShelfMaterial() != shelfMaterial) {
+                continue;
+            }
+            if (player != null && config.isNetworkOwners() && !network.mayUse(player)) {
                 continue;
             }
 
@@ -337,56 +327,59 @@ public class NetworkManager {
         return null;
     }
 
-    /**
-     * Called when a shelf is registered for a chest
-     * @deprecated Use onShelfRegistered(Location, Location) instead
-     */
-    @Deprecated
-    public void onShelfRegistered(Location chestLoc) {
-        onShelfRegistered(null, chestLoc);
+    /** Registers a chest for a shelf placed without a player (API, test builders): no owner. */
+    public ChestNetwork onShelfRegistered(Location shelfLoc, Location chestLoc) {
+        return onShelfRegistered(shelfLoc, chestLoc, null);
     }
 
     /**
-     * Called when a shelf is registered for a chest
-     * @param shelfLoc The shelf location (used to determine material)
-     * @param chestLoc The chest location
+     * Called when a shelf is registered for a chest: the chest joins a nearby network of the same
+     * wood that the player may use, or starts a new one (owned by the player with network owners on).
+     * A chest belongs to one network only: a further shelf on it (other side, on top, other wood)
+     * just shows its contents. Callers check {@link ChestNetwork#mayUse} for that case first.
      */
-    public void onShelfRegistered(Location shelfLoc, Location chestLoc) {
-        if (chestLoc.getWorld() == null) return;
+    public ChestNetwork onShelfRegistered(Location shelfLoc, Location chestLoc, UUID player) {
+        World world = chestLoc.getWorld();
+        if (world == null) return null;
 
-        // Get shelf material from the shelf manager
-        Material shelfMaterial = shelfLoc != null ? shelfManager.getShelfMaterial(shelfLoc) : Material.OAK_SHELF;
+        ChestNetwork existing = getNetworkForChest(chestLoc);
+        if (existing != null) {
+            return existing;
+        }
+
+        Material shelfMaterial = shelfLoc != null ? shelfManager.getShelfMaterial(shelfLoc) : null;
         if (shelfMaterial == null) {
             shelfMaterial = Material.OAK_SHELF;
         }
 
-        // Find nearby network with same material or create a new one
-        ChestNetwork network = findNearbyNetwork(chestLoc, shelfMaterial);
-
+        ChestNetwork network = findNearbyNetwork(chestLoc, shelfMaterial, player);
         if (network == null) {
-            // Create new network with this chest as root
-            network = getOrCreateNetwork(chestLoc.getWorld(), chestLoc, shelfMaterial);
-            String materialName = formatMaterialName(shelfMaterial);
-            plugin.getLogger().info("Created new " + materialName + " network with root at " + formatLocation(chestLoc));
-        }
-
-        // Add chest to network
-        if (!network.containsChest(chestLoc)) {
-            network.addChest(chestLoc);
-            network.markDirty();
-            save();
-
-            if (config.isDebug()) {
-                String materialName = formatMaterialName(shelfMaterial);
-                plugin.getLogger().info("[DEBUG] Added chest to " + materialName + " network: " + formatLocation(chestLoc));
+            network = new ChestNetwork(world, chestLoc, shelfMaterial, config);
+            if (player != null && config.isNetworkOwners()) {
+                network.setOwner(player);
             }
+            networks.computeIfAbsent(world.getName(), k -> new ArrayList<>()).add(network);
+            plugin.getLogger().info("Created new " + formatMaterialName(shelfMaterial) + " network in "
+                + world.getName() + " at " + formatLocation(chestLoc));
         }
+
+        network.addChest(chestLoc);
+        network.markDirty();
+        save();
+        if (config.isDebug()) {
+            plugin.getLogger().info("[DEBUG] Added chest to " + formatMaterialName(shelfMaterial) + " network: " + formatLocation(chestLoc));
+        }
+        return network;
     }
 
     /**
      * Called when a shelf is unregistered
      */
     public void onShelfUnregistered(Location chestLoc) {
+        // a double chest can carry two shelves: the chest stays in while one is left
+        if (shelfManager.hasShelf(chestLoc)) {
+            return;
+        }
         ChestNetwork network = getNetworkForChest(chestLoc);
         if (network != null) {
             network.removeChest(chestLoc);
@@ -429,9 +422,12 @@ public class NetworkManager {
      * Set the root chest for a network (finds nearby network first)
      */
     public void setRoot(World world, Location root) {
-        ChestNetwork network = findNearbyNetwork(root);
+        ChestNetwork network = getNetworkForChest(root);
         if (network == null) {
-            network = getOrCreateNetwork(world, root);
+            network = findNearbyNetwork(root);
+        }
+        if (network == null) {
+            return;
         }
         network.setRoot(root);
         save();
@@ -476,7 +472,7 @@ public class NetworkManager {
     }
 
     /**
-     * Execute full sort for a network (uses FullReorganizeTask instead of QuickSortTask)
+     * Execute full sort for a network
      */
     private void executeFullSort(Location chestLoc, Player player) {
         if (config.isDebug()) {
@@ -506,18 +502,8 @@ public class NetworkManager {
             plugin.getLogger().info("[DEBUG] FullReorganizeTask completed");
         }
 
-        player.sendMessage("§a[Hoardi] §7Items sorted!");
-    }
-
-    /**
-     * Trigger full reorganization for a world
-     */
-    public void triggerFullReorganize(World world) {
-        List<ChestNetwork> worldNetworks = getNetworks(world);
-        for (ChestNetwork network : worldNetworks) {
-            if (!network.isEmpty()) {
-                plugin.getLogger().info("Triggering full reorganize for network at " + formatLocation(network.getRoot()));
-            }
+        if (player.isOnline()) {
+            player.spigot().sendMessage(ChatMessageType.ACTION_BAR, TextComponent.fromLegacyText("§a[Hoardi] §7Items sorted"));
         }
     }
 
@@ -545,41 +531,13 @@ public class NetworkManager {
         return all;
     }
 
-    /**
-     * Find nearby shelves of the same material that could form a network with the given location.
-     * This is useful for notifying players about potential network connections.
-     */
-    public List<Location> findNearbyShelvesSameMaterial(Location shelfLoc, Material material) {
-        List<Location> nearby = new ArrayList<>();
-        Set<Location> sameMaterial = shelfManager.getTrackedShelvesByMaterial(material);
-        int maxRadius = config.getNetworkRadius();
-
-        for (Location other : sameMaterial) {
-            if (!other.equals(shelfLoc) &&
-                areInSameWorld(shelfLoc, other) &&
-                getDistance(shelfLoc, other) <= maxRadius) {
-                nearby.add(other);
-            }
+    /** Display name of a network's owner ("everyone" for shared networks). */
+    public static String ownerName(ChestNetwork network) {
+        if (network.getOwner() == null) {
+            return "everyone";
         }
-
-        return nearby;
-    }
-
-    private boolean areInSameWorld(Location a, Location b) {
-        World worldA = a.getWorld();
-        World worldB = b.getWorld();
-        if (worldA == null || worldB == null) {
-            return false;
-        }
-        return worldA.equals(worldB);
-    }
-
-    private double getDistance(Location a, Location b) {
-        // 3D Euclidean distance
-        double dx = a.getBlockX() - b.getBlockX();
-        double dy = a.getBlockY() - b.getBlockY();
-        double dz = a.getBlockZ() - b.getBlockZ();
-        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+        String name = Bukkit.getOfflinePlayer(network.getOwner()).getName();
+        return name != null ? name : network.getOwner().toString().substring(0, 8);
     }
 
     /**

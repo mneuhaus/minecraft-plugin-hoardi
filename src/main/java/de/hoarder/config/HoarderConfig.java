@@ -19,17 +19,15 @@ public class HoarderConfig {
     private int splitThreshold;
     private int minItemsForSplit;
     private int sortDelayTicks;
+    private boolean networkOwners;
     private boolean debug;
 
     // Spatial settings
-    private int stackHeight;
-    private boolean counterClockwise;
     private boolean bottomToTop;
 
     // Performance settings
     private boolean quickSortOnClose;
     private int fullReorganizeInterval;
-    private int itemsPerTick;
 
     // Item hierarchy: material -> category path
     private final Map<Material, String> materialToCategory = new HashMap<>();
@@ -55,33 +53,16 @@ public class HoarderConfig {
         plugin.reloadConfig();
         FileConfiguration config = plugin.getConfig();
 
-        // Settings
-        ConfigurationSection settings = config.getConfigurationSection("settings");
-        if (settings != null) {
-            networkRadius = settings.getInt("network_radius", 32);
-            splitThreshold = settings.getInt("split_threshold", 50);
-            minItemsForSplit = settings.getInt("min_items_for_split", 32);
-            sortDelayTicks = settings.getInt("sort_delay_ticks", 10);
-            debug = settings.getBoolean("debug", false);
-        }
-
-        // Spatial settings
-        ConfigurationSection spatial = config.getConfigurationSection("spatial");
-        if (spatial != null) {
-            stackHeight = spatial.getInt("stack_height", 3);
-            String direction = spatial.getString("spiral_direction", "COUNTER_CLOCKWISE");
-            counterClockwise = direction.equalsIgnoreCase("COUNTER_CLOCKWISE");
-            String verticalOrder = spatial.getString("vertical_order", "BOTTOM_TO_TOP");
-            bottomToTop = verticalOrder.equalsIgnoreCase("BOTTOM_TO_TOP");
-        }
-
-        // Performance settings
-        ConfigurationSection performance = config.getConfigurationSection("performance");
-        if (performance != null) {
-            quickSortOnClose = performance.getBoolean("quick_sort_on_close", true);
-            fullReorganizeInterval = performance.getInt("full_reorganize_interval", 12000);
-            itemsPerTick = performance.getInt("items_per_tick", 64);
-        }
+        // Read by full path so a missing section still gets the defaults instead of zeros
+        networkRadius = config.getInt("settings.network_radius", 32);
+        splitThreshold = config.getInt("settings.split_threshold", 50);
+        minItemsForSplit = config.getInt("settings.min_items_for_split", 32);
+        sortDelayTicks = config.getInt("settings.sort_delay_ticks", 10);
+        networkOwners = config.getBoolean("settings.network_owners", true);
+        debug = config.getBoolean("settings.debug", false);
+        bottomToTop = config.getString("spatial.vertical_order", "BOTTOM_TO_TOP").equalsIgnoreCase("BOTTOM_TO_TOP");
+        quickSortOnClose = config.getBoolean("performance.quick_sort_on_close", true);
+        fullReorganizeInterval = config.getInt("performance.full_reorganize_interval", 12000);
 
         // Load category order
         loadCategoryOrder(config);
@@ -363,12 +344,9 @@ public class HoarderConfig {
         return debug;
     }
 
-    public int getStackHeight() {
-        return stackHeight;
-    }
-
-    public boolean isCounterClockwise() {
-        return counterClockwise;
+    /** true: a network belongs to whoever placed its first shelf; others join only when trusted. */
+    public boolean isNetworkOwners() {
+        return networkOwners;
     }
 
     public boolean isBottomToTop() {
@@ -381,9 +359,5 @@ public class HoarderConfig {
 
     public int getFullReorganizeInterval() {
         return fullReorganizeInterval;
-    }
-
-    public int getItemsPerTick() {
-        return itemsPerTick;
     }
 }

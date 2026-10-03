@@ -102,6 +102,9 @@ public class FullReorganizeTask extends BukkitRunnable {
             if (!forceAll && !network.isDirty()) {
                 continue; // nothing changed since the last run
             }
+            if (!network.isLoaded()) {
+                continue; // nobody around: sorting would load its chunks; it stays dirty for later
+            }
             reorganizeNetwork(network);
         }
     }
