@@ -30,3 +30,21 @@ uv run --with pillow edit.py t1 out/hoardi-demo.mp4
 ```
 
 Client options that matter (`~/.cache/hoardi-demo/work/options.txt`): `pauseOnLostFocus:false`, `chatVisibility:2`, `gamma:1.0`, `soundCategory_master:0.0`, `onboardAccessibility:false`.
+
+## Vertical short (YouTube Shorts, EN + DE)
+
+`short/` cuts a 1080x1920 short to an ElevenLabs voice-over (key in `~/.config/elevenlabs/hoardi-key`, never in the repo).
+Lines, hook title and end card text live in `short/script.json`; the director's `v*` shots are timed so `short/edit.py`
+can anchor the lid closing and the first shelf to the spoken word.
+
+```bash
+RES=540x960 ./restart.sh                          # portrait client (1080x1920 framebuffer on Retina)
+docker exec paper-test rcon-cli "demo build"
+SIZE="1080 1920" WINCAP_ASPECT=9:16 ./take.sh v3 vdump vshelves vfind vgrow vend
+ROOM=setup SIZE="1080 1920" WINCAP_ASPECT=9:16 ./take.sh vs2 vsetup vnet
+uv run --with requests short/vo.py en             # voice-over + word timings -> ~/.cache/hoardi-demo/short
+uv run --with pillow --with numpy short/edit.py en v3 vs2   # -> out/hoardi-short-en.mp4
+```
+
+Music (`music.mp3`, ElevenLabs Music), `sfx-*.mp3` (ElevenLabs sound effects) and `mc-*.ogg` (copied from the client's
+asset index) are expected in `~/.cache/hoardi-demo/short`.

@@ -78,8 +78,10 @@ Task {
         let config = SCStreamConfiguration()
         config.showsCursor = false
         config.ignoreShadowsSingleWindow = true
-        // drop the title bar: the game area is 16:9 (launched with a 16:9 --resolution)
-        let content = CGSize(width: window.frame.width, height: window.frame.width * 9 / 16)
+        // drop the title bar: the game area has the aspect of the client's --resolution
+        // (16:9 by default, WINCAP_ASPECT=9:16 for the vertical short)
+        let aspect = (ProcessInfo.processInfo.environment["WINCAP_ASPECT"] ?? "16:9").split(separator: ":").compactMap { Double($0) }
+        let content = CGSize(width: window.frame.width, height: window.frame.width * aspect[1] / aspect[0])
         config.sourceRect = CGRect(x: 0, y: window.frame.height - content.height, width: content.width, height: content.height)
 
         if args[1] == "shot" {

@@ -277,6 +277,55 @@ final class SetupScene {
         }
     }
 
+    /**
+     * Short prep: the north wall's double chests already stand (filled, no shelves yet) and the
+     * builder waits off-centre, sneaking, with a shelf in hand.
+     */
+    void placeAllChests() {
+        int count = NORTH_COLUMNS.length * ROWS;
+        for (int i = 0; i < count; i++) placeDoubleChest(i);
+        clearDroppedItems();
+        Location spot = at(-1.3, 0, -0.3);
+        spot.setYaw(160);
+        builder.teleport(spot);
+        builder.getEquipment().setItemInMainHand(new ItemStack(Material.BIRCH_SHELF));
+        builder.setPose(Pose.SNEAKING, true);
+    }
+
+    /**
+     * Short: one sneak-place per chest, each shelf fills up right away. The first shelf lands at
+     * 1.9 s (edit.py anchors it to "Sneak"), the last at 3.58 s. Needs placeAllChests first.
+     */
+    HoardiDemo.Shot shortSetupShot() {
+        HoardiDemo.Shot s = new HoardiDemo.Shot("vsetup", 6.2);
+        key(s, 0, look(2.6, 2.05, 2.0, 0.7, 1.1, -3.5));
+        key(s, 6.2, look(1.95, 1.8, 0.7, 0.6, 1.05, -3.5));
+        int count = NORTH_COLUMNS.length * ROWS;
+        for (int i = 0; i < count; i++) {
+            int n = i;
+            s.at(1.9 + i * 0.12, () -> {
+                placeNorthShelf(n);
+                new de.hoarder.shelf.ShelfDisplayTask(hoardi.getShelfManager()).run();
+            });
+        }
+        return s;
+    }
+
+    /** Short: the three networks light up, the camera whips west, north, east across them. */
+    HoardiDemo.Shot shortNetworkShot() {
+        double z = SZ - HoardiDemo.OZ;
+        HoardiDemo.Shot s = new HoardiDemo.Shot("vnet", 3.8);
+        s.key(0, 0.5, 1.9, 1.5 + z, 90, 10);
+        s.key(0.3, 0.5, 1.9, 1.5 + z, 90, 10);
+        s.key(1.4, 0.5, 1.9, 1.3 + z, 180, 9);
+        s.key(2.5, 0.5, 1.9, 1.5 + z, 270, 11);
+        s.key(3.8, 0.5, 1.9, 1.5 + z, 270, 11);
+        // the builder would stand in the middle of the pan: park him behind the camera
+        s.at(0, () -> builder.teleport(at(-3.6, 0, 4.4)));
+        s.at(0, this::showNetworks);
+        return s;
+    }
+
     /** Camera pose looking from (x,y,z) at a target, in the director's hall-local frame (z shifted by 100). */
     private static double[] look(double x, double y, double z, double tx, double ty, double tz) {
         double dx = tx - x, dy = ty - y, dz = tz - z;

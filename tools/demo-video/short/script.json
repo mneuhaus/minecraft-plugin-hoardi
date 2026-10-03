@@ -1,0 +1,38 @@
+{
+  "voices": {
+    "en": "VCgLBmBjldJmfphyB8sZ",
+    "de": "nsFsExJHz4xV1sOX6Kdn"
+  },
+  "hook": {
+    "en": ["MINECRAFT STORAGE", "THAT SORTS ITSELF"],
+    "de": ["MINECRAFT-LAGER, DAS", "SICH SELBST SORTIERT"]
+  },
+  "endcard": {
+    "en": ["Free on Modrinth", "Paper & Spigot 1.21.9 – 26.3"],
+    "de": ["Kostenlos auf Modrinth", "Paper & Spigot 1.21.9 – 26.3"]
+  },
+  "anchors": {
+    "close": {"en": ["close", 0.15], "de": ["zu...", 0.05]},
+    "first_shelf": {"en": ["Sneak", 0.0], "de": ["Schleichen,", 0.0]}
+  },
+  "beats": [
+    {"shot": "vdump",    "en": "Stop sorting your chests by hand.",
+                         "de": "Hör auf, deine Kisten von Hand zu sortieren."},
+    {"shot": "vdump",    "en": "Dump everything into one chest, close it...",
+                         "de": "Kipp alles in eine Kiste, Deckel zu..."},
+    {"shot": "vdump",    "en": "and Hoardi sorts it all into the right place.",
+                         "de": "und Hoardi sortiert alles an den richtigen Platz."},
+    {"shot": "vshelves", "en": "Every shelf shows what's inside.",
+                         "de": "Jedes Regal zeigt, was drin ist."},
+    {"shot": "vfind",    "en": "Need iron? Just read the shelves.",
+                         "de": "Du suchst Eisen? Ein Blick aufs Regal reicht."},
+    {"shot": "vsetup",   "en": "Setting it up? Sneak and place a shelf. That's it.",
+                         "de": "Einrichten? Schleichen, Regal dransetzen. Fertig."},
+    {"shot": "vnet",     "en": "Every wood type is its own network.",
+                         "de": "Jede Holzart ist ein eigenes Netzwerk."},
+    {"shot": "vgrow",    "en": "Add more chests, and it re-sorts itself.",
+                         "de": "Mehr Kisten dazu, und alles sortiert sich neu."},
+    {"shot": "vend",     "en": "Hoardi. Free on Modrinth.",
+                         "de": "Hoardi. Kostenlos auf Modrinth."}
+  ]
+}

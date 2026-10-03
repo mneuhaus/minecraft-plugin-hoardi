@@ -3,6 +3,7 @@ package de.hoarder.demo;
 import de.hoarder.HoarderPlugin;
 import de.hoarder.network.ChestNetwork;
 import de.hoarder.network.NetworkManager;
+import de.hoarder.shelf.ShelfDisplayTask;
 import de.hoarder.shelf.ShelfManager;
 import de.hoarder.sorting.FullReorganizeTask;
 import io.papermc.paper.block.TileStateInventoryHolder;
@@ -115,6 +116,10 @@ public final class HoardiDemo extends JavaPlugin {
             case "setupreset" -> {
                 setup.reset();
                 sender.sendMessage("setup reset");
+            }
+            case "setupchests" -> {
+                setup.placeAllChests();
+                sender.sendMessage("north wall chests placed, builder ready with shelves");
             }
             case "free" -> stopCamera();
             case "shots" -> sender.sendMessage(String.join(", ", shots.keySet()));
@@ -536,6 +541,104 @@ public final class HoardiDemo extends JavaPlugin {
         shots.put("end", () -> new Shot("end", 5)
             .key(0, -1.4, 2.5, 0.5, -90, 11)
             .key(5, -1.9, 2.7, 0.5, -90, 12));
+
+        defineShortShots();
+    }
+
+    /** Camera pose looking from (x,y,z) at a target, in hall-local coordinates. */
+    static double[] look(double x, double y, double z, double tx, double ty, double tz) {
+        double dx = tx - x, dy = ty - y, dz = tz - z;
+        double yaw = Math.toDegrees(Math.atan2(-dx, dz));
+        double pitch = Math.toDegrees(-Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)));
+        return new double[]{x, y, z, yaw, pitch};
+    }
+
+    static Shot key(Shot s, double t, double[] p) {
+        return s.key(t, p[0], p[1], p[2], p[3], p[4]);
+    }
+
+    /**
+     * The vertical YouTube short (client at 540x960, recorded 1080x1920): tighter framing, one idea per
+     * shot. In portrait the horizontal field of view is only ~43 degrees, so wall shots look along the
+     * wall instead of straight at it. Timings follow the voice-over (short/script.json): events the
+     * narration names (lid closes, first shelf) sit at fixed shot times that short/edit.py anchors to
+     * the spoken word, the static stretches around them absorb the different EN/DE line lengths.
+     */
+    private void defineShortShots() {
+        // hook + payoff in one take: the loot pours in, the GUI holds until the lid closes at 6.0 s,
+        // the shelves flip a second later (in the narration's pause), then the camera pulls back
+        shots.put("vdump", () -> {
+            int[] target = dumpChest != null ? dumpChest : new int[]{5, 1, -1};
+            double[] f = facing(target, 1.6);
+            Inventory inv = chestInv(target);
+            List<ItemStack> loot = stacks(Hoard.LOOT);
+            Shot s = new Shot("vdump", 10.6).key(0, f[0], f[1] + 0.1, f[2], f[3], 3).key(7.6, f[0], f[1] + 0.1, f[2], f[3], 3);
+            key(s, 9.8, look(f[0] - 1.6, 2.0, 1.4, f[0] + 4.0, 1.0, -3.0));
+            key(s, 10.6, look(f[0] - 1.75, 2.02, 1.45, f[0] + 4.0, 1.0, -3.0));
+            s.at(0, () -> camPlayer().openInventory(inv));
+            for (int i = 0; i < loot.size() && i < 27; i++) {
+                ItemStack stack = loot.get(i);
+                int slot = i;
+                s.at(0.15 + (i / 2) * 0.05, () -> inv.setItem(slot, stack));
+            }
+            s.at(6.0, () -> camPlayer().closeInventory());
+            s.at(7.0, () -> {
+                sortNetwork();
+                refreshShelves();
+            });
+            return s;
+        });
+
+        // slide along the south wall: every shelf a label
+        shots.put("vshelves", () -> {
+            Shot s = new Shot("vshelves", 3.4);
+            key(s, 0, look(9.6, 1.6, 1.2, 7.6, 1.3, 3.0));
+            return key(s, 3.4, look(5.8, 1.6, 1.2, 3.8, 1.3, 3.0));
+        });
+
+        // where is the iron? push in on its shelf (done at 2.4 s), the chest opens at 3.2 s
+        shots.put("vfind", () -> {
+            int[] best = chestSlots().stream()
+                .filter(c -> c[1] >= 1)
+                .max(Comparator.comparingInt(c -> count(chestInv(c), Material.RAW_IRON)))
+                .orElse(new int[]{3, 1, -1});
+            double[] f = facing(best, 1.6);
+            Inventory inv = chestInv(best);
+            Shot s = new Shot("vfind", 5.6).key(0, clampX(f[0] - 2.6), f[1] + 0.55, 0.5, f[3] - 38 * best[2], 9)
+                .key(2.4, f[0], f[1] + 0.1, f[2], f[3], 3);
+            s.at(3.2, () -> camPlayer().openInventory(inv));
+            s.at(5.4, () -> camPlayer().closeInventory());
+            return s;
+        });
+
+        // three more columns arrive and the network re-sorts itself (shelves flip at 1.3 s)
+        shots.put("vgrow", () -> {
+            Shot s = new Shot("vgrow", 3.4);
+            key(s, 0, look(8.3, 1.95, 1.7, 12.0, 1.2, -3.0));
+            key(s, 3.4, look(8.8, 1.85, 1.3, 12.0, 1.2, -3.0));
+            s.at(0.3, () -> placeColumn(START_COLS, true));
+            s.at(0.55, () -> placeColumn(START_COLS + 1, true));
+            s.at(0.8, () -> placeColumn(START_COLS + 2, true));
+            s.at(1.3, () -> {
+                for (int x = START_COLS; x < COLS; x++) registerColumn(x);
+                sortNetwork();
+                refreshShelves();
+            });
+            return s;
+        });
+
+        // end card plate: straight down the aisle, both walls converging
+        shots.put("vend", () -> new Shot("vend", 5)
+            .key(0, -1.4, 1.9, 0.5, -90, 3)
+            .key(5, 0.4, 1.85, 0.5, -90, 3));
+
+        shots.put("vsetup", () -> setup.shortSetupShot());
+        shots.put("vnet", () -> setup.shortNetworkShot());
+    }
+
+    /** Pushes chest contents onto the shelves now instead of at Hoardi's next one-second display tick. */
+    void refreshShelves() {
+        new ShelfDisplayTask(hoardi.getShelfManager()).run();
     }
 
     // ------------------------------------------------------------------ camera
@@ -594,7 +697,8 @@ public final class HoardiDemo extends JavaPlugin {
         stopCamera();
         Player p = camPlayer();
         p.setGameMode(GameMode.SPECTATOR);
-        p.teleport(names.get(0).equals("setup") ? setup.at(0.5, 1, 3) : at(4, 1, 0.5));
+        boolean inSetupRoom = List.of("setup", "vsetup", "vnet").contains(names.get(0));
+        p.teleport(inSetupRoom ? setup.at(0.5, 1, 3) : at(4, 1, 0.5));
         mark("run " + String.join(",", names));
         running = new BukkitRunnable() {
             int warmup = 60, index = -1, tick;
