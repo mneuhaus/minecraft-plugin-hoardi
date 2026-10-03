@@ -1,0 +1,14 @@
+{
+ "hoardi-en": {"file": "~/Workspace/minecraft-plugin-hordi/tools/demo-video/out/hoardi-short-en.mp4",
+   "title": "Minecraft chests that sort themselves",
+   "desc": "Hoardi is a free Minecraft plugin that sorts your chests automatically. A shelf on each chest shows what's inside.\n\nDump your loot into any chest, close it, and everything moves into the right place. Sneak-place a shelf on a chest to add it, every wood type is its own network, add chests anytime.\n\nFree download: modrinth.com/plugin/hoardi\nAlso on Hangar: hangar.papermc.io/mneuhaus/Hoardi\nPaper & Spigot 1.21.9 – 26.3, open source (MIT)\n\n#minecraft #minecraftplugin #minecraftstorage"},
+ "hoardi-de": {"file": "~/Workspace/minecraft-plugin-hordi/tools/demo-video/out/hoardi-short-de.mp4",
+   "title": "Minecraft: Kisten sortieren sich selbst",
+   "desc": "Hoardi ist ein kostenloses Minecraft-Plugin, das deine Kisten automatisch sortiert. Ein Regal an jeder Kiste zeigt, was drin ist.\n\nLoot in irgendeine Kiste werfen, Deckel zu, und alles wandert an den richtigen Platz. Regal schleichend an eine Kiste setzen, schon ist sie dabei. Jede Holzart ist ein eigenes Netzwerk.\n\nKostenloser Download: modrinth.com/plugin/hoardi\nAuch auf Hangar: hangar.papermc.io/mneuhaus/Hoardi\nPaper & Spigot 1.21.9 – 26.3, Open Source (MIT)\n\n#minecraft #minecraftdeutsch #minecraftplugin"},
+ "flatpick-en": {"file": "~/Workspace/minecraft-plugin-flatpick/tools/demo-video/out/flatpick-short-en.mp4",
+   "title": "This Minecraft pickaxe mines 9x9 at once",
+   "desc": "FlatPick is a free Minecraft plugin: a golden pickaxe that mines anything from 2x2 up to 15x15 in one swing and keeps your tunnel floor perfectly flat.\n\nLook down and it flattens hills layer by layer. Ores drop like with a netherite pickaxe, Fortune and Silk Touch work too.\n\nFree download: modrinth.com/plugin/flatpick\nPaper, Purpur & Spigot 1.20.6 – 26.3\n\n#minecraft #minecraftplugin #minecraftmining"},
+ "flatpick-de": {"file": "~/Workspace/minecraft-plugin-flatpick/tools/demo-video/out/flatpick-short-de.mp4",
+   "title": "Diese Minecraft-Spitzhacke baut 9x9 ab",
+   "desc": "FlatPick ist ein kostenloses Minecraft-Plugin: eine goldene Spitzhacke, die von 2x2 bis 15x15 mit einem Schlag abbaut und den Tunnelboden komplett flach lässt.\n\nNach unten schauen, und sie trägt Hügel Schicht für Schicht ab. Erze droppen wie mit einer Netherite-Spitzhacke, Glück und Behutsamkeit funktionieren auch.\n\nKostenloser Download: modrinth.com/plugin/flatpick\nPaper, Purpur & Spigot 1.20.6 – 26.3\n\n#minecraft #minecraftdeutsch #minecraftplugin"}
+}
